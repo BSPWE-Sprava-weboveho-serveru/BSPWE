@@ -1,0 +1,5 @@
+FROM gists/pure-ftpd:1.0.53
+
+COPY entrypoint_ftp.sh /entrypoint_ftp.sh
+RUN chmod +x /entrypoint_ftp.sh
+ENTRYPOINT ["/entrypoint_ftp.sh"]

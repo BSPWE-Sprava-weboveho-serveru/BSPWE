@@ -1,0 +1,70 @@
+services:
+    database:
+        build: 
+            context: ./docker
+            dockerfile: Dockerfile.database
+        restart: always
+        container_name: mariadb
+        environment:
+            MARIADB_ROOT_PASSWORD: maria
+        healthcheck:
+            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 30s
+        volumes:
+            - dbdata:/var/lib/mysql
+        ports:
+            - "3306:3306"
+    
+    web_server:
+        build:
+            context: ./docker
+            dockerfile: Dockerfile.web_server
+        restart: always
+        container_name: apache
+        volumes:
+            - ./webserver:/usr/local/apache2/htdocs
+        depends_on:
+            database:
+                condition: service_healthy
+        ports:
+            - "80:80"
+
+    ftp_server:
+        build:
+            context: ./docker
+            dockerfile: Dockerfile.ftp_server
+        restart: always
+        container_name: ftp
+        environment:
+            PUBLICHOST: localhost
+            FTP_ADMIN_USERNAME: admin
+            FTP_ADMIN_PASSWORD: adminpass
+            FTP_ADMIN_HOME: /home/admin
+        volumes:
+            - ./webserver:/home/admin:rw
+            - ./ftp/config:/etc/pureftpd
+        depends_on:
+            database:
+                condition: service_healthy
+        ports:
+            - "21:21"
+            - "30000-30009:30000-30009"
+
+    adminer:
+        image: adminer
+        restart: always
+        container_name: adminer
+        environment:
+            ADMINER_DEFAULT_SERVER: database # username=root password=maria
+        depends_on:
+            database:
+                condition: service_healthy
+        ports:
+            - "8888:8080"
+
+
+volumes:
+    dbdata:

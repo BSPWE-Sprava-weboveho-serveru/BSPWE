@@ -23,14 +23,14 @@ services:
             context: ./docker
             dockerfile: Dockerfile.web_server
         restart: always
-        container_name: apache
+        container_name: webserver
         volumes:
-            - ./webserver:/usr/local/apache2/htdocs
+            - ./webserver:/var/www/html
         depends_on:
             database:
                 condition: service_healthy
         ports:
-            - "80:80"
+            - "8080:80"
 
     ftp_server:
         build:

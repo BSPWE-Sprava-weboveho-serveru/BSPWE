@@ -1,1 +1,8 @@
-FROM httpd:2.4
+FROM php:8.2-apache
+
+RUN docker-php-ext-install mysqli pdo pdo_mysql
+
+# Enable Apache rewrite module (crucial for "hosting" pretty URLs)
+RUN a2enmod rewrite vhost_alias proxy proxy_http
+
+COPY vhost.conf /etc/apache2/sites-enabled/000-default.conf

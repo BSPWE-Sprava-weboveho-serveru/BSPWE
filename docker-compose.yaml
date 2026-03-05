@@ -23,9 +23,9 @@ services:
             context: ./docker
             dockerfile: Dockerfile.web_server
         restart: always
-        container_name: apache
+        container_name: webserver
         volumes:
-            - ./webserver:/usr/local/apache2/htdocs
+            - ./webserver:/var/www/html
         depends_on:
             database:
                 condition: service_healthy
@@ -52,6 +52,18 @@ services:
         ports:
             - "21:21"
             - "30000-30009:30000-30009"
+
+    dns_server:
+        image: strm/dnsmasq
+        container_name: dnsmasq
+        cap_add:
+            - NET_ADMIN
+        volumes:
+            - ./docker/dnsmasq.conf:/etc/dnsmasq.conf
+        ports:
+            - "53:53/udp"
+            - "53:53/tcp" # Add TCP just in case
+        restart: always
 
     adminer:
         image: adminer

@@ -1,0 +1,44 @@
+<?php
+// Pøipojení se k databázi
+require_once 'db.php';
+
+// Kontrola, jestli k nám data pøišla z formuláøe (pøes POST)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // Naètení dat z políèek formuláøe
+    $user = $_POST['username'];
+    $pass = $_POST['password'];
+    $domain = $_POST['domain'];
+
+    $hashedPassword = password_hash($pass, PASSWORD_BCRYPT);
+
+    try {
+        //Uložení uživatele a jeho domény do databáze
+        $sql = "INSERT INTO users (username, password, domain) VALUES (?, ?, ?)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$user, $hashedPassword, $domain]);
+
+        //Vytvoøení složky pro web
+        $path = "../" . $domain;
+
+        if (!file_exists($path)) {
+            mkdir($path, 0777, true);
+            
+            file_put_contents($path . "/index.html", "<h1>Web pro doménu $domain bìží!</h1>");
+        }
+
+        echo "<h2>Hotovo! Hosting byl úspìšnì zøízen.</h2>";
+        echo "<p>Doména: <strong>$domain</strong></p>";
+        echo "<p>Uživatel pro FTP: <strong>$user</strong></p>";
+        echo "<hr>";
+        echo "<a href='index.php'>Zpìt na registraci</a>";
+
+    } catch (Exception $e) {
+        die("Chyba pøi vytváøení hostingu: " . $e->getMessage());
+    }
+
+} else {
+    header("Location: index.php");
+    exit;
+}
+?>

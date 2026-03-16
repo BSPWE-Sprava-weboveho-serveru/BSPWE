@@ -1,26 +1,26 @@
 <?php
-// Parametry pro pøipojení (shodují se s docker-compose.yaml)
-$host = 'database';      // Název služby v Dockeru
-$user = 'root';          // Výchozí uživatel
-$pass = 'maria';         // Heslo, které je v docker-compose
-$db   = 'hosting_centrum'; // Název databáze (tuhle se pak vytvoøí v Admineru)
-$charset = 'utf8mb4';    // Podpora pro èeskou diakritiku
+// Parametry pro pÅ™ipojenÃ­ (shodujÃ­ se s docker-compose.yaml)
+$host = 'database';      // NÃ¡zev sluÅ¾by v Dockeru
+$user = 'root';          // VÃ½chozÃ­ uÅ¾ivatel
+$pass = 'maria';         // Heslo, kterÃ© je v docker-compose
+$db   = 'hosting_centrum'; // NÃ¡zev datÃ¡ze (tuhle se pak vytvoÅ™Ã­ v Admineru)
+$charset = 'utf8mb4';    // Podpora pro Äeskou diakritiku
 
-// DSN (Data Source Name) - takový "štítek" pro ovladaè
+// DSN (Data Source Name) - takovÃ½ ?"ï¿½tï¿½tek" pro ovladaÄ
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
 
-// Nastavení, jak se má PHP chovat pøi chybách
+// NastavenÃ­, jak se mÃ¡ PHP chovat pÅ™i chybÃ¡ch
 $options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // Hlásit chyby jako výjimky
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,       // Výsledky z DB vracet jako pole
-    PDO::ATTR_EMULATE_PREPARES   => false,                  // Zvýšení bezpeènosti
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // HlÃ¡sit chyby jako vyjÃ­mky
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,       // VÃ½sledky z DB vracet jako pole
+    PDO::ATTR_EMULATE_PREPARES   => false,                  // ?Zvï¿½ï¿½enï¿½ bezpeÄnosti
 ];
 
 try {
-    // Pokus o vytvoøení spojení
+    // Pokus o vytvoÅ™enÃ­ spojenÃ­
     $pdo = new PDO($dsn, $user, $pass, $options);
 } catch (\PDOException $e) {
-    // Pokud se to nepovede, vypíše to chybu
-    die("Nepodaøilo se pøipojit k databázi: " . $e->getMessage());
+    // Pokud se to nepovede, vypiÅ¡ chybu
+    die("NepodaÅ™ilo se pÅ™ipojit k databÃ¡zi: " . $e->getMessage());
 }
 ?>

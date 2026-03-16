@@ -1,5 +1,5 @@
 <?php
-// jen èisté HTML pro testování backendu
+// jen ÄistÃ© HTML pro testovÃ¡nÃ­ backendu
 ?>
 <!DOCTYPE html>
 <html lang="cs">
@@ -8,11 +8,11 @@
     <title>Milanovo Hosting - Registrace</title>
 </head>
 <body>
-    <h1>Vytvoøte si svùj vlastní hosting</h1>
+    <h1>VytvoÅ™te si svÅ¯j vlastnÃ­ hosting</h1>
 
     <form action="register.php" method="POST">
         <div>
-            <label>Uživatelské jméno (pro FTP):</label><br>
+            <label>UÅ¾ivatelskÃ© jmÃ©no (pro FTP):</label><br>
             <input type="text" name="username" required>
         </div>
         
@@ -26,13 +26,13 @@
         <br>
 
         <div>
-            <label>Název vaší domény (napø. moje-firma.cz):</label><br>
+            <label>NÃ¡zev vaÅ¡Ã­ domÃ©ny (napÅ™. moje-firma.cz):</label><br>
             <input type="text" name="domain" required>
         </div>
 
         <br>
 
-        <button type="submit">Založit hosting</button>
+        <button type="submit">ZaloÅ¾it hosting</button>
     </form>
 </body>
 </html>

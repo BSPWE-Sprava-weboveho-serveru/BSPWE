@@ -1,31 +1,31 @@
 <?php
 session_start();
 
-// Pøipojení k databázi
+// PÅ™ipojenÃ­ k databÃ¡zi
 require_once 'db.php';
 
-// Zpracování pøihlášení
+// ZpracovÃ¡nÃ­ pÅ™ihlÃ¡Å¡enÃ­
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user = $_POST['username'];
     $pass = $_POST['password'];
 
-    // Nalezení uivatele v databázi podle jména
+    // NalezenÃ­ uÅ¾ivatele v databÃ¡zi podle jmÃ©na
     $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
     $stmt->execute([$user]);
     $dbUser = $stmt->fetch();
 
-    // Pokud uivatel existuje, kontrola zahashovaného hesla
+    // Pokud uÅ¾ivatel existuje, kontrola zahashovanÃ©ho hesla
     if ($dbUser && password_verify($pass, $dbUser['password'])) {
         
-        // Zápis do session, e je uivatel pøihlášen (pøi úspìchu)
+        // ZÃ¡pis do session, Å¾e je uÅ¾ivatel pÅ™ihlÃ¡Å¡en (pÅ™i ÃºspÄ›chu)
         $_SESSION['user_id'] = $dbUser['id'];
         $_SESSION['username'] = $dbUser['username'];
 
-        // Pøesmìrování na dashboard
+        // PÅ™esmÄ›rovÃ¡nÃ­ na dashboard
         header("Location: dashboard.php");
         exit;
     } else {
-        $error = "Špatné jméno nebo heslo.";
+        $error = "Å patnÃ© jmÃ©no nebo heslo.";
     }
 }
 ?>
@@ -34,23 +34,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>Pøihlášení - Milanovo Hosting</title>
+    <title>PÅ™ihlÃ¡Å¡enÃ­ - Milanovo Hosting</title>
 </head>
 <body>
-    <h1>Pøihlášení do správy hostingu</h1>
+    <h1>PÅ™ihlÃ¡Å¡enÃ­ do sprÃ¡vy hostingu</h1>
 
     <?php if (isset($error)) echo "<p style='color:red'>$error</p>"; ?>
 
     <form method="POST">
-        <label>Uivatelské jméno:</label><br>
+        <label>UÅ¾ivatelskÃ© jmÃ©no:</label><br>
         <input type="text" name="username" required><br><br>
 
         <label>Heslo:</label><br>
         <input type="password" name="password" required><br><br>
 
-        <button type="submit">Pøihlásit se</button>
+        <button type="submit">PÅ™ihlÃ¡sit se</button>
     </form>
     
-    <p>Nemáte úèet? <a href="index.php">Zaregistrujte se</a></p>
+    <p>NemÃ¡te ÃºÄet? <a href="index.php">Zaregistrujte se</a></p>
 </body>
 </html>

@@ -34,5 +34,7 @@
 
         <button type="submit">Založit hosting</button>
     </form>
+
+    <p>Máte účet? <a href="login.php">Příhlásit se</a></p>
 </body>
 </html>

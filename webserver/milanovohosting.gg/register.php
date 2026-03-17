@@ -26,6 +26,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             file_put_contents($path . "/index.html", "<h1>Web pro doménu $domain běží!</h1>");
         }
+        $dnsmasqConfig = "/etc/dnsmasq.conf";
+        $newLine = "address=/$domain/127.0.0.1";
+
+        if (file_exists($dnsmasqConfig)) {
+            $currentContent = file_get_contents($dnsmasqConfig);
+            
+            if (strpos($currentContent, "/$domain/") === false) {
+                file_put_contents($dnsmasqConfig, "\n" . $newLine, FILE_APPEND | LOCK_EX);
+            }
+        }
 
         echo "<h2>Hotovo! Hosting byl úspěšně zřízen.</h2>";
         echo "<p>Doména: <strong>$domain</strong></p>";

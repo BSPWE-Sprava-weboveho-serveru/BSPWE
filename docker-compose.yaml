@@ -26,11 +26,12 @@ services:
         container_name: webserver
         volumes:
             - ./webserver:/var/www/html
+            - ./docker/dnsmasq.conf:/etc/dnsmasq.conf
         depends_on:
             database:
                 condition: service_healthy
         ports:
-            - "8080:80"
+            - "80:80"
 
     ftp_server:
         build:
@@ -54,7 +55,9 @@ services:
             - "30000-30009:30000-30009"
 
     dns_server:
-        image: strm/dnsmasq
+        build:
+            context: ./docker
+            dockerfile: Dockerfile.dns
         container_name: dnsmasq
         cap_add:
             - NET_ADMIN

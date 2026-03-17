@@ -1,0 +1,12 @@
+FROM ubuntu:jammy
+
+RUN apt-get update && \
+    apt-get install -y dnsmasq inotify-tools supervisor procps && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY ./dns_watcher.sh /usr/local/bin/dns_watcher.sh
+RUN chmod +x /usr/local/bin/dns_watcher.sh
+
+COPY ./supervisord.conf /etc/supervisord.conf
+
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]

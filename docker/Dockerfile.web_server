@@ -5,8 +5,3 @@ RUN docker-php-ext-install mysqli pdo pdo_mysql
 RUN a2enmod rewrite vhost_alias proxy proxy_http
 
 COPY vhost.conf /etc/apache2/sites-enabled/000-default.conf
-
-COPY entrypoint_web.sh /usr/local/bin/entrypoint_web.sh
-RUN chmod +x /usr/local/bin/entrypoint_web.sh
-
-ENTRYPOINT ["entrypoint_web.sh"]

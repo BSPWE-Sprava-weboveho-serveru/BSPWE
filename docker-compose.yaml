@@ -25,6 +25,7 @@ services:
             context: ./docker
             dockerfile: Dockerfile.web_server
         restart: always
+        user: "1000:1000"
         container_name: webserver
         volumes:
             - ./webserver:/var/www/html

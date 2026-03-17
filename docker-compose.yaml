@@ -30,7 +30,7 @@ services:
             database:
                 condition: service_healthy
         ports:
-            - "80:80"
+            - "8080:80"
 
     ftp_server:
         build:

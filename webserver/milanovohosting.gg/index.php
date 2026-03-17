@@ -1,14 +1,38 @@
 <?php
-$host = 'database';
-$user = 'root';
-$pass = 'maria';
-$db   = 'mysql';
-
-try {
-    $conn = new PDO("mysql:host=$host;dbname=$db", $user, $pass);
-    echo "<p style='color: green;'>Database Connection Successful!</p>";
-} catch (PDOException $e) {
-    echo "<h1>Connection Failed</h1>";
-    echo "<p style='color: red;'>" . $e->getMessage() . "</p>";
-}
+// jen čisté HTML pro testování backendu
 ?>
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Milanovo Hosting - Registrace</title>
+</head>
+<body>
+    <h1>Vytvořte si svůj vlastní hosting</h1>
+
+    <form action="register.php" method="POST">
+        <div>
+            <label>Uživatelské jméno (pro FTP):</label><br>
+            <input type="text" name="username" required>
+        </div>
+        
+        <br>
+
+        <div>
+            <label>Heslo:</label><br>
+            <input type="password" name="password" required>
+        </div>
+
+        <br>
+
+        <div>
+            <label>Název vaší domény (např. moje-firma.cz):</label><br>
+            <input type="text" name="domain" required>
+        </div>
+
+        <br>
+
+        <button type="submit">Založit hosting</button>
+    </form>
+</body>
+</html>

@@ -10,6 +10,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pass = $_POST['password'];
     $domain = $_POST['domain'];
 
+    // Kontrola, jestli už neexistuje doména
+    $checkSql = "SELECT COUNT(*) FROM users WHERE domain = ?";
+    $checkStmt = $pdo->prepare($checkSql);
+    $checkStmt->execute([$domain]);
+    $count = $checkStmt->fetchColumn();
+
+    if ($count > 0) {
+        echo "<h2>Doména již existuje!</h2>";
+        echo "<p>Doména <strong>" . htmlspecialchars($domain) . "</strong> je již registrována. Zvolte prosím jinou doménu.</p>";
+        echo "<a href='index.php'>Zpět na registraci</a>";
+        exit; 
+    }
+
+    // Kontrola, jestli už neexistuje username
+    $checkSql = "SELECT COUNT(*) FROM users WHERE username = ?";
+    $checkStmt = $pdo->prepare($checkSql);
+    $checkStmt->execute([$user]);
+    $count = $checkStmt->fetchColumn();
+
+    if ($count > 0) {
+        echo "<h2>Uživatel již existuje!</h2>";
+        echo "<p>Uživatel <strong>" . htmlspecialchars($user) . "</strong> je již zaregistrován. Zvolte prosím jiné uživatelské jméno.</p>";
+        echo "<a href='index.php'>Zpět na registraci</a>";
+        exit; 
+    }
+
     $hashedPassword = password_hash($pass, PASSWORD_BCRYPT);
 
     try {

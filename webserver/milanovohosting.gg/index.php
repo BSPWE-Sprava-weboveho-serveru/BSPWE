@@ -62,7 +62,7 @@
                     <form action="register.php" method="POST" class="register-form">
                         <div class="form-group">
                             <label for="username">Uživatelské jméno pro FTP</label>
-                            <input type="text" id="username" name="username" required>
+                            <input type="text" id="username" name="username" placeholder="Zadejte uživatelské jméno" required>
                         </div>
 
                         <div class="form-group">
@@ -88,33 +88,6 @@
         </main>
     </div>
 
-<script>
-    // Odkaz na HTML root element a tlačítko pro změnu motivu
-    const root = document.documentElement;
-    const toggle = document.getElementById('themeToggle');
-
-    const savedTheme = localStorage.getItem('theme');
-
-    // Pokud byl dříve zvolen tmavý režim, nastaví se při načtení stránky
-    if (savedTheme === 'dark') {
-        root.classList.add('dark');
-        toggle.textContent = '☀️';
-    }
-
-    // Přepínání mezi světlým a tmavým režimem
-    toggle.addEventListener('click', () => {
-        root.classList.toggle('dark');
-
-        const isDark = root.classList.contains('dark');
-
-        if (isDark) {
-            localStorage.setItem('theme', 'dark');
-            toggle.textContent = '☀️';
-        } else {
-            localStorage.setItem('theme', 'light');
-            toggle.textContent = '🌙';
-        }
-    });
-</script>
+<script src="theme.js"></script>
 </body>
 </html>

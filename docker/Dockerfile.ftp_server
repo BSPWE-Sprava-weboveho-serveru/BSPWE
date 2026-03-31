@@ -1,5 +1,10 @@
 FROM gists/pure-ftpd:1.0.53
 
 COPY entrypoint_ftp.sh /entrypoint_ftp.sh
-RUN chmod +x /entrypoint_ftp.sh
+COPY create_ftp_user.sh /create_ftp_user.sh
+
+RUN sed -i 's/\r$//' /entrypoint_ftp.sh \
+    && sed -i 's/\r$//' /create_ftp_user.sh \
+    && chmod +x /entrypoint_ftp.sh /create_ftp_user.sh
+
 ENTRYPOINT ["/entrypoint_ftp.sh"]

@@ -1,6 +1,6 @@
 services:
     database:
-        build: 
+        build:
             context: ./docker
             dockerfile: Dockerfile.database
         restart: always
@@ -19,7 +19,7 @@ services:
             - ./db/initdb.sql:/docker-entrypoint-initdb.d/init.sql
         ports:
             - "3306:3306"
-    
+
     web_server:
         build:
             context: ./docker
@@ -29,6 +29,7 @@ services:
         container_name: webserver
         volumes:
             - ./webserver:/var/www/html
+            - ./ftp/requests:/ftp-requests
         depends_on:
             database:
                 condition: service_healthy
@@ -42,13 +43,17 @@ services:
         restart: always
         container_name: ftp
         environment:
-            PUBLICHOST: localhost
+            PUBLICHOST: 127.0.0.1
+            MIN_PASV_PORT: 30000
+            MAX_PASV_PORT: 30009
             FTP_ADMIN_USERNAME: admin
             FTP_ADMIN_PASSWORD: adminpass
             FTP_ADMIN_HOME: /home/admin
         volumes:
-            - ./webserver:/home/admin:rw
+            - ./webserver/users:/home/ftpusers:rw
+            - ./webserver/users:/home/admin:rw
             - ./ftp/config:/etc/pureftpd
+            - ./ftp/requests:/ftp-requests
         depends_on:
             database:
                 condition: service_healthy
@@ -61,13 +66,12 @@ services:
         restart: always
         container_name: adminer
         environment:
-            ADMINER_DEFAULT_SERVER: database # username=root password=maria
+            ADMINER_DEFAULT_SERVER: database
         depends_on:
             database:
                 condition: service_healthy
         ports:
             - "8888:8080"
-
 
 volumes:
     dbdata:

@@ -1,18 +1,79 @@
 <?php
 session_start();
 require_once 'db.php';
+require_once 'ftp_crypto.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
 
-$userId = $_SESSION['user_id'];
+function rrmdir(string $dir): bool
+{
+    if (!is_dir($dir)) {
+        return true;
+    }
 
-// Načtení uživatele
-$stmt = $pdo->prepare("SELECT id, username FROM users WHERE id = ?");
+    $items = scandir($dir);
+    if ($items === false) {
+        return false;
+    }
+
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+
+        $path = $dir . DIRECTORY_SEPARATOR . $item;
+
+        if (is_dir($path)) {
+            if (!rrmdir($path)) {
+                return false;
+            }
+        } else {
+            if (!unlink($path)) {
+                return false;
+            }
+        }
+    }
+
+    return rmdir($dir);
+}
+
+function writeFtpRequest(string $type, string $username, ?string $plainPassword = null): void
+{
+    $requestDir = '/ftp-requests';
+
+    if (!is_dir($requestDir) && !mkdir($requestDir, 0775, true)) {
+        throw new Exception('Nepodařilo se vytvořit request adresář pro FTP.');
+    }
+
+    $data = [
+        'type' => $type,
+        'username' => $username,
+    ];
+
+    if ($plainPassword !== null) {
+        $data['ftp_password_plain'] = $plainPassword;
+    }
+
+    $requestFile = $requestDir . '/ftp_' . $type . '_' . $username . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.json';
+
+    $written = file_put_contents(
+        $requestFile,
+        json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+    );
+
+    if ($written === false) {
+        throw new Exception('Nepodařilo se zapsat FTP request.');
+    }
+}
+
+$userId = (int) $_SESSION['user_id'];
+
+$stmt = $pdo->prepare("SELECT id, username, ftp_password FROM users WHERE id = ?");
 $stmt->execute([$userId]);
-$user = $stmt->fetch();
+$user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$user) {
     session_destroy();
@@ -20,71 +81,137 @@ if (!$user) {
     exit;
 }
 
-// SMAZÁNÍ DOMÉNY
+$username = $user['username'];
+$userRoot = __DIR__ . "/../users/" . $username;
+
+$ftpPasswordDecrypted = null;
+try {
+    if (!empty($user['ftp_password'])) {
+        $ftpPasswordDecrypted = decryptFtpPassword($user['ftp_password']);
+    }
+} catch (Exception $e) {
+    $ftpPasswordDecrypted = null;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_domain_id'])) {
     $deleteDomainId = (int) $_POST['delete_domain_id'];
 
     try {
-        // Ověření, že doména patří přihlášenému uživateli
         $stmtCheck = $pdo->prepare("SELECT id, domain_name FROM domains WHERE id = ? AND user_id = ?");
         $stmtCheck->execute([$deleteDomainId, $userId]);
-        $domainToDelete = $stmtCheck->fetch();
+        $domainToDelete = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
         if (!$domainToDelete) {
-            $error = "Tuto doménu nelze smazat, protože nepatří k vašemu účtu.";
-        } else {
-            $stmtDelete = $pdo->prepare("DELETE FROM domains WHERE id = ? AND user_id = ?");
-            $stmtDelete->execute([$deleteDomainId, $userId]);
+            throw new Exception("Tuto doménu nelze smazat, protože nepatří k vašemu účtu.");
+        }
 
-            // volitelně smazání složky domény zatím neprovádíme
+        $domainPath = $userRoot . "/" . $domainToDelete['domain_name'];
+
+        $pdo->beginTransaction();
+
+        $stmtDelete = $pdo->prepare("DELETE FROM domains WHERE id = ? AND user_id = ?");
+        $stmtDelete->execute([$deleteDomainId, $userId]);
+
+        $pdo->commit();
+
+        if (is_dir($domainPath) && !rrmdir($domainPath)) {
+            $error = "Doména byla smazána z databáze, ale nepodařilo se odstranit její složku.";
+        } else {
             $success = "Doména " . $domainToDelete['domain_name'] . " byla úspěšně smazána.";
         }
     } catch (Exception $e) {
-        $error = "Při mazání domény došlo k chybě.";
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $error = "Při mazání domény došlo k chybě: " . $e->getMessage();
     }
 }
 
-// PŘIDÁNÍ NOVÉ DOMÉNY
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_domain'])) {
     $newDomain = trim($_POST['new_domain']);
 
     if ($newDomain === '') {
         $error = "Zadejte název domény.";
+    } elseif (!preg_match('/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $newDomain)) {
+        $error = "Doména nemá správný formát.";
     } else {
         try {
-            // Kontrola, jestli už doména existuje v systému
             $stmtCheckDomain = $pdo->prepare("SELECT id FROM domains WHERE domain_name = ?");
             $stmtCheckDomain->execute([$newDomain]);
-            $existingDomain = $stmtCheckDomain->fetch();
+            $existingDomain = $stmtCheckDomain->fetch(PDO::FETCH_ASSOC);
 
             if ($existingDomain) {
-                $error = "Tato doména už je v systému obsazená. Vyberte jinou.";
-            } else {
-                $stmtInsert = $pdo->prepare("INSERT INTO domains (user_id, domain_name) VALUES (?, ?)");
-                $stmtInsert->execute([$userId, $newDomain]);
-
-                $path = "../" . $newDomain;
-
-                if (!file_exists($path)) {
-                    mkdir($path, 0777, true);
-                    file_put_contents(
-                        $path . "/index.html",
-                        "<h1>Web pro doménu " . htmlspecialchars($newDomain) . " běží!</h1>"
-                    );
-                }
-
-                $success = "Doména byla úspěšně přidána.";
+                throw new Exception("Tato doména už je v systému obsazená. Vyberte jinou.");
             }
+
+            $domainPath = $userRoot . "/" . $newDomain;
+
+            $pdo->beginTransaction();
+
+            $stmtInsert = $pdo->prepare("INSERT INTO domains (user_id, domain_name) VALUES (?, ?)");
+            $stmtInsert->execute([$userId, $newDomain]);
+
+            $pdo->commit();
+
+            if (!is_dir($userRoot) && !mkdir($userRoot, 0775, true)) {
+                throw new Exception("Nepodařilo se vytvořit složku uživatele.");
+            }
+
+            if (!is_dir($domainPath) && !mkdir($domainPath, 0775, true)) {
+                throw new Exception("Nepodařilo se vytvořit složku domény.");
+            }
+
+            $indexFile = $domainPath . "/index.html";
+            if (!file_exists($indexFile)) {
+                $content = "<h1>Web pro doménu " . htmlspecialchars($newDomain, ENT_QUOTES, 'UTF-8') . " běží!</h1>";
+                if (file_put_contents($indexFile, $content) === false) {
+                    throw new Exception("Nepodařilo se vytvořit index.html.");
+                }
+            }
+
+            $success = "Doména byla úspěšně přidána.";
         } catch (Exception $e) {
-            $error = "Při přidávání domény došlo k chybě.";
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $error = "Při přidávání domény došlo k chybě: " . $e->getMessage();
         }
     }
 }
 
-// Načtení všech domén uživatele
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_ftp_password'])) {
+    try {
+        $newFtpPasswordPlain = bin2hex(random_bytes(4));
+        $newFtpPasswordEncrypted = encryptFtpPassword($newFtpPasswordPlain);
+
+        $pdo->beginTransaction();
+
+        $stmtUpdate = $pdo->prepare("UPDATE users SET ftp_password = ? WHERE id = ?");
+        $stmtUpdate->execute([$newFtpPasswordEncrypted, $userId]);
+
+        writeFtpRequest('reset_password', $username, $newFtpPasswordPlain);
+
+        $pdo->commit();
+
+        $_SESSION['ftp_password_plain_once'] = $newFtpPasswordPlain;
+        header("Location: admin.php");
+        exit;
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $error = "Nepodařilo se resetovat FTP heslo: " . $e->getMessage();
+    }
+}
+
+$ftpPasswordPlainOnce = $_SESSION['ftp_password_plain_once'] ?? null;
+unset($_SESSION['ftp_password_plain_once']);
+
 $stmtDomains = $pdo->prepare("SELECT id, domain_name, created_at FROM domains WHERE user_id = ? ORDER BY id ASC");
 $stmtDomains->execute([$userId]);
-$domains = $stmtDomains->fetchAll();
+$domains = $stmtDomains->fetchAll(PDO::FETCH_ASSOC);
+
+$displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce : $ftpPasswordDecrypted;
 ?>
 
 <!DOCTYPE html>
@@ -129,6 +256,12 @@ $domains = $stmtDomains->fetchAll();
                     <p class="form-error"><?php echo htmlspecialchars($error); ?></p>
                 <?php endif; ?>
 
+                <?php if ($ftpPasswordPlainOnce !== null): ?>
+                    <p class="success-message">
+                        Nové FTP heslo bylo vygenerováno: <strong><?php echo htmlspecialchars($ftpPasswordPlainOnce); ?></strong>
+                    </p>
+                <?php endif; ?>
+
                 <div class="dashboard-grid">
                     <div class="dashboard-item dashboard-item-wide">
                         <div class="domain-card-head">
@@ -159,14 +292,22 @@ $domains = $stmtDomains->fetchAll();
 
                     <div class="dashboard-item">
                         <span class="dashboard-label">FTP hostitel</span>
-                        <span class="dashboard-value">localhost</span>
+                        <span class="dashboard-value">127.0.0.1</span>
                         <span class="dashboard-note">Port 21</span>
                     </div>
 
                     <div class="dashboard-item">
                         <span class="dashboard-label">FTP uživatel</span>
                         <span class="dashboard-value"><?php echo htmlspecialchars($user['username']); ?></span>
-                        <span class="dashboard-note">Přístup k účtu</span>
+                        <span class="dashboard-note">Přístup k vašemu účtu</span>
+                    </div>
+
+                    <div class="dashboard-item">
+                        <span class="dashboard-label">FTP heslo</span>
+                        <span class="dashboard-value">
+                            <?php echo $displayedFtpPassword !== null ? htmlspecialchars($displayedFtpPassword) : 'Nelze zobrazit heslo'; ?>
+                        </span>
+                        <span class="dashboard-note">Heslo k FTP účtu</span>
                     </div>
 
                     <div class="dashboard-item dashboard-item-wide">
@@ -177,6 +318,22 @@ $domains = $stmtDomains->fetchAll();
                         </div>
                     </div>
                 </div>
+
+                <div class="dashboard-divider"></div>
+
+                <div class="dashboard-panel-top dashboard-panel-top-compact">
+                    <div>
+                        <div class="card-badge">FTP přístup</div>
+                        <h2>Obnovit FTP heslo</h2>
+                        <p>Vygeneruje nové FTP heslo a staré přestane platit.</p>
+                    </div>
+                </div>
+
+                <form method="POST" class="register-form add-domain-form">
+                    <button type="submit" name="reset_ftp_password" value="1" class="primary-btn">
+                        Vygenerovat nové FTP heslo
+                    </button>
+                </form>
 
                 <div class="dashboard-divider"></div>
 

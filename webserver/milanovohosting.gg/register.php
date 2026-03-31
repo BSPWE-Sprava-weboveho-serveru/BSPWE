@@ -1,47 +1,115 @@
 <?php
+session_start();
 require_once 'db.php';
+require_once 'ftp_crypto.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $user = trim($_POST['username']);
-    $pass = $_POST['password'];
-    $domain = trim($_POST['domain']);
+    $user = trim($_POST['username'] ?? '');
+    $pass = $_POST['password'] ?? '';
+    $domain = trim($_POST['domain'] ?? '');
 
     if ($user === '' || $pass === '' || $domain === '') {
         $error = "Všechna pole musí být vyplněná.";
+    } elseif (!preg_match('/^[a-zA-Z0-9_.-]+$/', $user)) {
+        $error = "Uživatelské jméno obsahuje nepovolené znaky.";
+    } elseif (!preg_match('/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $domain)) {
+        $error = "Doména nemá správný formát.";
     } else {
         $hashedPassword = password_hash($pass, PASSWORD_BCRYPT);
+
+        // Vygenerované FTP heslo
+        $ftpPasswordPlain = bin2hex(random_bytes(4));
+        $ftpPasswordEncrypted = encryptFtpPassword($ftpPasswordPlain);
+
+        // Cesty
+        $userRoot = __DIR__ . "/../users/" . $user;
+        $domainPath = $userRoot . "/" . $domain;
+        $requestDir = "/ftp-requests";
+        $requestFile = $requestDir . "/ftp_create_user_" . $user . "_" . time() . ".json";
 
         try {
             $pdo->beginTransaction();
 
-            // Uložení uživatele
-            $sqlUser = "INSERT INTO users (username, password) VALUES (?, ?)";
-            $stmtUser = $pdo->prepare($sqlUser);
-            $stmtUser->execute([$user, $hashedPassword]);
+            // Kontrola unikátního username
+            $stmtCheckUser = $pdo->prepare("SELECT id FROM users WHERE username = ?");
+            $stmtCheckUser->execute([$user]);
 
-            // Získání ID nového uživatele
+            if ($stmtCheckUser->fetch()) {
+                throw new Exception("Uživatel už existuje.");
+            }
+
+            // Kontrola unikátní domény
+            $stmtCheckDomain = $pdo->prepare("SELECT id FROM domains WHERE domain_name = ?");
+            $stmtCheckDomain->execute([$domain]);
+
+            if ($stmtCheckDomain->fetch()) {
+                throw new Exception("Tato doména už je v systému obsazená.");
+            }
+
+            // Vložení uživatele
+            $sqlUser = "INSERT INTO users (username, password, ftp_password) VALUES (?, ?, ?)";
+            $stmtUser = $pdo->prepare($sqlUser);
+            $stmtUser->execute([$user, $hashedPassword, $ftpPasswordEncrypted]);
+
             $userId = $pdo->lastInsertId();
 
-            // Uložení první domény uživatele
+            // Vložení první domény
             $sqlDomain = "INSERT INTO domains (user_id, domain_name) VALUES (?, ?)";
             $stmtDomain = $pdo->prepare($sqlDomain);
             $stmtDomain->execute([$userId, $domain]);
 
-            $pdo->commit();
-
-            // Vytvoření složky pro web
-            $path = "../" . $domain;
-
-            if (!file_exists($path)) {
-                mkdir($path, 0777, true);
-                file_put_contents($path . "/index.html", "<h1>Web pro doménu " . htmlspecialchars($domain) . " běží!</h1>");
+            // Vytvoření adresáře uživatele
+            if (!is_dir($userRoot) && !mkdir($userRoot, 0775, true)) {
+                throw new Exception("Nepodařilo se vytvořit složku uživatele.");
             }
 
+            // Vytvoření adresáře domény
+            if (!is_dir($domainPath) && !mkdir($domainPath, 0775, true)) {
+                throw new Exception("Nepodařilo se vytvořit složku domény.");
+            }
+
+            // Výchozí index.html
+            $indexFile = $domainPath . "/index.html";
+            if (!file_exists($indexFile)) {
+                $content = "<h1>Web pro doménu " . htmlspecialchars($domain, ENT_QUOTES, 'UTF-8') . " běží!</h1>";
+                if (file_put_contents($indexFile, $content) === false) {
+                    throw new Exception("Nepodařilo se vytvořit index.html.");
+                }
+            }
+
+            // Vytvoření request adresáře pro FTP worker
+            if (!is_dir($requestDir) && !mkdir($requestDir, 0775, true)) {
+                throw new Exception("Nepodařilo se vytvořit request adresář.");
+            }
+
+            // Request pro FTP kontejner
+            $requestData = [
+                'type' => 'create_user',
+                'username' => $user,
+                'ftp_password_plain' => $ftpPasswordPlain
+            ];
+
+            $json = json_encode($requestData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            if ($json === false) {
+                throw new Exception("Nepodařilo se vytvořit JSON pro FTP request.");
+            }
+
+            if (file_put_contents($requestFile, $json) === false) {
+                throw new Exception("Nepodařilo se zapsat FTP request.");
+            }
+
+            $pdo->commit();
+
+            $_SESSION['ftp_password_plain_once'] = $ftpPasswordPlain;
             $success = true;
 
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
+            }
+
+            if (isset($requestFile) && file_exists($requestFile)) {
+                unlink($requestFile);
             }
 
             $error = "Chyba při vytváření hostingu: " . $e->getMessage();
@@ -52,7 +120,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -81,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <p class="hero-text">
                     <?php if (isset($success) && $success): ?>
-                        Za <span id="countdown">5</span> vteřin budete automaticky přesměrováni na přihlášení.
+                        Hosting a FTP účet byly vytvořeny.
                     <?php else: ?>
                         Výsledek zpracování vašeho požadavku na vytvoření hostingu.
                     <?php endif; ?>
@@ -100,7 +167,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="dashboard-item">
                             <span class="dashboard-label">FTP uživatel</span>
                             <span class="dashboard-value"><?php echo htmlspecialchars($user); ?></span>
-                            <span class="dashboard-note">Přihlašovací jméno k účtu</span>
+                            <span class="dashboard-note">Přihlašovací jméno k FTP účtu</span>
+                        </div>
+
+                        <div class="dashboard-item">
+                            <span class="dashboard-label">FTP heslo</span>
+                            <span class="dashboard-value"><?php echo htmlspecialchars($ftpPasswordPlain); ?></span>
+                            <span class="dashboard-note">Tohle heslo se bude zobrazovat i v administraci</span>
                         </div>
 
                         <div class="dashboard-item">
@@ -112,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
 
                     <div class="dashboard-buttons">
-                        <a href="login.php" class="primary-link-btn">Přejít hned na přihlášení</a>
+                        <a href="login.php" class="primary-link-btn">Přejít na přihlášení</a>
                     </div>
 
                 <?php else: ?>
@@ -125,7 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <p class="form-error"><?php echo htmlspecialchars($error); ?></p>
+                    <p class="form-error"><?php echo htmlspecialchars($error ?? 'Došlo k neznámé chybě.'); ?></p>
 
                     <div class="dashboard-buttons">
                         <a href="index.php" class="primary-link-btn">Zpět na registraci</a>
@@ -137,22 +210,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script src="theme.js"></script>
-
-    <?php if (isset($success) && $success): ?>
-    <script>
-        let countdown = 5;
-        const countdownElement = document.getElementById('countdown');
-
-        const interval = setInterval(() => {
-            countdown--;
-            countdownElement.textContent = countdown;
-
-            if (countdown <= 0) {
-                clearInterval(interval);
-                window.location.href = 'login.php';
-            }
-        }, 1000);
-    </script>
-    <?php endif; ?>
 </body>
 </html>

@@ -102,11 +102,11 @@ body {
 
 .hero {
     min-height: calc(100vh - 64px);
-    max-width: 1260px;
+    max-width: 1380px;
     margin: 0 auto;
     display: grid;
     grid-template-columns: 1.05fr 0.95fr;
-    gap: 48px;
+    gap: 56px;
     align-items: center;
 }
 
@@ -137,9 +137,9 @@ body {
 
 .hero-text {
     margin: 0;
-    max-width: 620px;
-    font-size: 18px;
-    line-height: 1.7;
+    max-width: 760px;
+    font-size: 16px;
+    line-height: 1.65;
     color: var(--muted);
 }
 
@@ -318,28 +318,28 @@ input:focus {
 }
 
 .dashboard-layout {
-    max-width: 1120px;
+    max-width: 1320px;
     margin: 0 auto;
-    padding-top: 56px;
+    padding-top: 44px;
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 18px;
 }
 
 .dashboard-header {
-    max-width: 720px;
+    max-width: 860px;
 }
 
 .dashboard-header h1 {
-    margin: 0 0 10px;
-    font-size: clamp(38px, 4vw, 54px);
+    margin: 0 0 8px;
+    font-size: clamp(34px, 3.2vw, 50px);
     line-height: 1;
     letter-spacing: -0.04em;
 }
 
 .dashboard-panel {
     width: 100%;
-    padding: 26px;
+    padding: 30px;
     border-radius: 28px;
     background: var(--card);
     border: 1px solid var(--card-border);
@@ -358,7 +358,7 @@ input:focus {
 
 .dashboard-panel-top h2 {
     margin: 10px 0 6px;
-    font-size: 30px;
+    font-size: 26px;
     line-height: 1.05;
 }
 
@@ -376,15 +376,15 @@ input:focus {
 .dashboard-grid {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
-    gap: 14px;
+    gap: 16px;
 }
 
 .dashboard-item {
     grid-column: span 6;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 18px;
+    gap: 8px;
+    padding: 20px;
     border-radius: 20px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.18));
     border: 1px solid var(--point-border);
@@ -416,8 +416,8 @@ input:focus {
 }
 
 .dashboard-value {
-    font-size: 24px;
-    line-height: 1.15;
+    font-size: 18px;
+    line-height: 1.2;
     font-weight: 800;
     color: var(--text);
 }
@@ -426,6 +426,174 @@ input:focus {
     font-size: 14px;
     color: var(--muted);
     line-height: 1.5;
+}
+
+.dashboard-layout-wide {
+    max-width: 1320px;
+}
+
+.dashboard-header-wide {
+    max-width: 860px;
+}
+
+.success-message {
+    margin: 0 0 18px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    color: #166534;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+:root.dark .success-message {
+    background: rgba(34, 197, 94, 0.14);
+    border: 1px solid rgba(74, 222, 128, 0.22);
+    color: #bbf7d0;
+}
+
+.domain-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.domains-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: var(--badge-bg);
+    color: var(--badge-text);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.domains-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.domain-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.46);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+:root.dark .domain-pill {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.domain-pill-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--button), var(--button-hover));
+    flex-shrink: 0;
+}
+
+.domain-pill-text {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+}
+
+.dashboard-value-empty {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.dashboard-divider {
+    height: 1px;
+    margin: 28px 0;
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(148, 163, 184, 0.28) 15%,
+            rgba(148, 163, 184, 0.28) 85%,
+            transparent 100%);
+}
+
+.dashboard-panel-top-compact {
+    margin-bottom: 18px;
+}
+
+.add-domain-form {
+    max-width: 100%;
+}
+
+.add-domain-form .primary-btn {
+    margin-top: 2px;
+}
+
+.domains-list-with-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.domain-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.domain-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.domain-delete-form {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.delete-domain-btn {
+    height: 40px;
+    padding: 0 16px;
+    border: 1px solid rgba(239, 68, 68, 0.22);
+    border-radius: 12px;
+    background: rgba(239, 68, 68, 0.1);
+    color: #b91c1c;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.delete-domain-btn:hover {
+    transform: translateY(-1px);
+    background: rgba(239, 68, 68, 0.16);
+    box-shadow: 0 8px 18px rgba(239, 68, 68, 0.12);
+}
+
+:root.dark .delete-domain-btn {
+    color: #fecaca;
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(248, 113, 113, 0.22);
+}
+
+:root.dark .delete-domain-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
 }
 
 .status-row {
@@ -528,6 +696,16 @@ input:focus {
     .dashboard-logout {
         width: 100%;
     }
+
+    .dashboard-layout,
+    .dashboard-layout-wide {
+        max-width: 100%;
+    }
+
+    .dashboard-header,
+    .dashboard-header-wide {
+        max-width: 100%;
+    }
 }
 
 @media (max-width: 640px) {
@@ -592,5 +770,31 @@ input:focus {
     .status-row {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .domains-list {
+        flex-direction: column;
+    }
+
+    .domain-pill {
+        width: 100%;
+    }
+
+    .domain-card-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .domain-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .domain-delete-form {
+        width: 100%;
+    }
+
+    .delete-domain-btn {
+        width: 100%;
     }
 }

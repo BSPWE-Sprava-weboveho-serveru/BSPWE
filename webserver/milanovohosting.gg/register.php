@@ -77,6 +77,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            // Cesta k adresáři se symlinky (musíš ho předem vytvořit: mkdir -p ./webserver/domains)
+            $domainsDir = __DIR__ . "/../domains";
+            if (!is_dir($domainsDir) && !mkdir($domainsDir, 0775, true)) {
+                throw new Exception("Nepodařilo se vytvořit hlavní složku domains.");
+            }
+
+            // Vytvoření symlinku: /var/www/html/domains/moje-firma.cz -> /var/www/html/users/milan/moje-firma.cz
+            $symlinkPath = $domainsDir . "/" . $domain;
+            if (!file_exists($symlinkPath)) {
+                // Relativní symlinky jsou v Dockeru bezpečnější než absolutní cesty
+                $targetPath = "../users/" . $user . "/" . $domain; 
+                if (!symlink($targetPath, $symlinkPath)) {
+                    throw new Exception("Nepodařilo se vytvořit symlink pro doménu.");
+                }
+            }
+
             // Vytvoření request adresáře pro FTP worker
             if (!is_dir($requestDir) && !mkdir($requestDir, 0775, true)) {
                 throw new Exception("Nepodařilo se vytvořit request adresář.");

@@ -454,6 +454,12 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
             color: #666;
             font-style: italic;
         }
+        .domain-selector {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
     </style>
 </head>
 <body>
@@ -645,6 +651,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <button type="button" id="refreshFilesBtn" class="secondary-btn">Aktualizovat</button>
                 </div>
 
                 <div id="filesForDomain">
@@ -654,7 +661,19 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                 <script>
                     const domainSelector = document.getElementById('domain_selector');
                     const filesContainer = document.getElementById('filesForDomain');
+                    const refreshBtn = document.getElementById('refreshFilesBtn');
                     let currentDomain = <?php echo json_encode($selectedDomainForFiles); ?>;
+
+                    if (refreshBtn) {
+                        refreshBtn.addEventListener('click', function() {
+                            const selectedDomain = domainSelector.value;
+                            if (selectedDomain) {
+                                loadFilesForDomain(selectedDomain);
+                            } else {
+                                filesContainer.innerHTML = '<p class="no-files">Vyberte doménu.</p>';
+                            }
+                        });
+                    }
 
                     // Funkce pro načtení souborů pro danou doménu
                     async function loadFilesForDomain(domain) {

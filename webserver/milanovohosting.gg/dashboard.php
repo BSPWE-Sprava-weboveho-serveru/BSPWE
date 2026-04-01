@@ -293,21 +293,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_file'])) {
         $uploadedCount = 0;
         $errors = [];
 
+        $filePaths = $_POST['file_paths'] ?? [];
+
         foreach ($files['error'] as $index => $error) {
             if ($error !== UPLOAD_ERR_OK) {
                 $errors[] = "Soubor '{$files['name'][$index]}' – chyba nahrávání (kód $error).";
                 continue;
             }
 
-            $fileName = basename($files['name'][$index]);
-            if ($fileName === '') {
-                $errors[] = "Soubor '{$files['name'][$index]}' – neplatný název.";
+            // Získáme relativní cestu, pokud byla odeslána, jinak použijeme název souboru
+            $remotePath = isset($filePaths[$index]) ? trim($filePaths[$index]) : basename($files['name'][$index]);
+            
+            // Bezpečnostní kontrola – nesmí obsahovat ".." a nesmí začínat lomítkem
+            if (strpos($remotePath, '..') !== false || strpos($remotePath, '/') === 0) {
+                $errors[] = "Soubor '{$remotePath}' – neplatná cesta.";
+                continue;
+            }
+            if ($remotePath === '') {
+                $errors[] = "Soubor '{$files['name'][$index]}' – prázdná cesta.";
                 continue;
             }
 
             $fileContent = file_get_contents($files['tmp_name'][$index]);
             if ($fileContent === false) {
-                $errors[] = "Soubor '{$fileName}' – nepodařilo se přečíst.";
+                $errors[] = "Soubor '{$remotePath}' – nepodařilo se přečíst.";
                 continue;
             }
 
@@ -315,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_file'])) {
 
             $fileData = [
                 'domain' => $domainName,
-                'remote_path' => $fileName,
+                'remote_path' => $remotePath,
                 'content_base64' => $base64Content,
             ];
 
@@ -323,7 +332,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_file'])) {
                 writeFtpRequest('upload_file', $username, null, $fileData);
                 $uploadedCount++;
             } catch (Exception $e) {
-                $errors[] = "Soubor '{$fileName}' – " . $e->getMessage();
+                $errors[] = "Soubor '{$remotePath}' – " . $e->getMessage();
             }
         }
 
@@ -618,10 +627,12 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                     </div>
 
                     <div class="form-group">
-                        <label>Výběr souborů</label>
+                        <label>Výběr souborů / složek</label>
                         <div id="fileDropZone" class="file-drop-zone">
                             <button type="button" id="selectFilesBtn" class="secondary-btn">Vybrat soubory</button>
+                            <button type="button" id="selectFolderBtn" class="secondary-btn">Vybrat složku</button>
                             <input type="file" id="hiddenFileInput" multiple style="display: none;">
+                            <input type="file" id="hiddenFolderInput" webkitdirectory directory style="display: none;">
                             <div id="fileListContainer" class="file-list-container"></div>
                         </div>
                     </div>
@@ -674,6 +685,28 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                             }
                         });
                     }
+                    
+                    const selectFolderBtn = document.getElementById('selectFolderBtn');
+                    const hiddenFolderInput = document.getElementById('hiddenFolderInput');
+
+                    selectFolderBtn.addEventListener('click', function() {
+                        hiddenFolderInput.click();
+                    });
+
+                    hiddenFolderInput.addEventListener('change', function(e) {
+                        const files = Array.from(e.target.files);
+                        files.forEach(file => {
+                            // Získáme relativní cestu (např. "slozka/podadresar/soubor.txt")
+                            let relativePath = file.webkitRelativePath || file.name;
+                            // Ověříme, zda už stejná cesta není v seznamu (podle cesty a velikosti)
+                            const exists = selectedFiles.some(f => f.remotePath === relativePath && f.file.size === file.size);
+                            if (!exists) {
+                                selectedFiles.push({ file, remotePath: relativePath });
+                            }
+                        });
+                        renderFileList();
+                        hiddenFolderInput.value = '';
+                    });    
 
                     // Funkce pro načtení souborů pro danou doménu
                     async function loadFilesForDomain(domain) {
@@ -777,12 +810,11 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                             fileListContainer.innerHTML = '<p class="no-files">Zatím nebyly vybrány žádné soubory.</p>';
                             return;
                         }
-                        
                         let html = '<ul class="file-list">';
                         selectedFiles.forEach((item, index) => {
                             html += `
                                 <li class="file-item">
-                                    <span class="file-name">${escapeHtml(item.name)}</span>
+                                    <span class="file-name">${escapeHtml(item.remotePath)}</span>
                                     <button type="button" class="remove-file-btn" data-index="${index}">✖</button>
                                 </li>
                             `;
@@ -819,6 +851,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                         formData.append('domain_name', domain);
                         selectedFiles.forEach(item => {
                             formData.append('files_to_upload[]', item.file, item.file.name);
+                            formData.append('file_paths[]', item.remotePath);
                         });
                         
                         uploadSubmitBtn.disabled = true;

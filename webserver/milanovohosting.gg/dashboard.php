@@ -65,7 +65,7 @@ function writeFtpRequest(string $type, string $username, ?string $plainPassword 
 
     $written = file_put_contents(
         $requestFile,
-        json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+        json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
     );
 
     if ($written === false) {
@@ -178,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_domain_id'])) 
 
         // Přesměrování pro zachování vybrané domény (po smazání může být vybraná doména neplatná)
         $redirectDomain = ($selectedDomain !== $domainToDelete['domain_name']) ? $selectedDomain : '';
-        header("Location: admin.php?selected_domain=" . urlencode($redirectDomain));
+        header("Location: dashboard.php?selected_domain=" . urlencode($redirectDomain));
         exit;
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
@@ -259,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_ftp_password'])
         $pdo->commit();
 
         $_SESSION['ftp_password_plain_once'] = $newFtpPasswordPlain;
-        header("Location: admin.php");
+        header("Location: dashboard.php");
         exit;
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
@@ -388,8 +388,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_file'])) {
 
         writeFtpRequest('delete_file', $username, null, $fileData);
 
-        // Po úspěšném odeslání requestu přesměrujeme zpět na admin.php s vybranou doménou
-        header("Location: admin.php?selected_domain=" . urlencode($selectedDomain));
+        // Po úspěšném odeslání requestu přesměrujeme zpět na dashboard.php s vybranou doménou
+        header("Location: dashboard.php?selected_domain=" . urlencode($selectedDomain));
         exit;
     } catch (Exception $e) {
         $error = "Smazání selhalo: " . $e->getMessage();

@@ -628,7 +628,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
 
                     <div class="form-group">
                         <label>Výběr souborů / složek</label>
-                        <div id="fileDropZone" class="file-drop-zone">
+                        <div id="fileDropZone" class="file-drop-zone" style="background: 0;">
                             <button type="button" id="selectFilesBtn" class="secondary-btn">Vybrat soubory</button>
                             <button type="button" id="selectFolderBtn" class="secondary-btn">Vybrat složku</button>
                             <input type="file" id="hiddenFileInput" multiple style="display: none;">

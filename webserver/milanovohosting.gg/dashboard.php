@@ -796,9 +796,10 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                     hiddenInput.addEventListener('change', function(e) {
                         const files = Array.from(e.target.files);
                         files.forEach(file => {
-                            const exists = selectedFiles.some(f => f.file.name === file.name && f.file.size === file.size);
+                            const remotePath = file.name;
+                            const exists = selectedFiles.some(f => f.remotePath === remotePath && f.file.size === file.size);
                             if (!exists) {
-                                selectedFiles.push({ file, name: file.name });
+                                selectedFiles.push({ file, remotePath: remotePath });
                             }
                         });
                         renderFileList();

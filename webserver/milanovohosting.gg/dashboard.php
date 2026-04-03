@@ -8,6 +8,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+$dbAdminUrl = 'http://localhost:8888';
+
 function rrmdir(string $dir): bool
 {
     if (!is_dir($dir)) {
@@ -73,7 +75,6 @@ function writeFtpRequest(string $type, string $username, ?string $plainPassword 
     }
 }
 
-// --- Pomocná funkce pro rekurzivní získání souborů ---
 function getFilesRecursive(string $dir, string $baseDir = ''): array
 {
     $files = [];
@@ -100,6 +101,115 @@ function getFilesRecursive(string $dir, string $baseDir = ''): array
     return $files;
 }
 
+function sanitizeForDbName(string $value): string
+{
+    $value = strtolower($value);
+    $value = preg_replace('/[^a-z0-9]+/', '_', $value);
+    $value = trim($value, '_');
+
+    if ($value === '') {
+        throw new Exception("Nepodařilo se vytvořit platný databázový název.");
+    }
+
+    return $value;
+}
+
+function escapeMysqlIdentifier(string $name): string
+{
+    return '`' . str_replace('`', '``', $name) . '`';
+}
+
+function escapeMysqlString(string $value): string
+{
+    return str_replace(
+        ["\\", "\0", "\n", "\r", "'", '"', "\x1a"],
+        ["\\\\", "\\0", "\\n", "\\r", "\\'", '\\"', "\\Z"],
+        $value
+    );
+}
+
+function escapeMysqlUser(string $value): string
+{
+    return "'" . escapeMysqlString($value) . "'";
+}
+
+function createDatabaseForDomain(PDO $pdo, string $username, string $domain, int $domainId): array
+{
+    $domainKey = sanitizeForDbName($domain);
+    $userKey = sanitizeForDbName($username);
+    $uniqueSuffix = substr(hash('sha256', $username . '|' . $domain . '|' . microtime(true)), 0, 8);
+
+    $dbName = substr("db_{$domainKey}_{$uniqueSuffix}", 0, 64);
+    $dbUser = substr("u_{$userKey}_{$uniqueSuffix}", 0, 32);
+    $dbPasswordPlain = bin2hex(random_bytes(8));
+
+    $stmtCheckDb = $pdo->prepare("SELECT id FROM user_databases WHERE db_name = ? OR db_user = ?");
+    $stmtCheckDb->execute([$dbName, $dbUser]);
+    if ($stmtCheckDb->fetch()) {
+        throw new Exception("Nepodařilo se vygenerovat unikátní databázové údaje.");
+    }
+
+    $escapedDbName = escapeMysqlIdentifier($dbName);
+    $escapedDbUser = escapeMysqlUser($dbUser);
+    $escapedDbPassword = "'" . escapeMysqlString($dbPasswordPlain) . "'";
+
+    $dbCreated = false;
+    $dbUserCreated = false;
+
+    try {
+        $pdo->exec("CREATE DATABASE {$escapedDbName}");
+        $dbCreated = true;
+
+        $pdo->exec("CREATE USER {$escapedDbUser}@'%' IDENTIFIED BY {$escapedDbPassword}");
+        $dbUserCreated = true;
+
+        $pdo->exec("GRANT ALL PRIVILEGES ON {$escapedDbName}.* TO {$escapedDbUser}@'%'");
+        $pdo->exec("FLUSH PRIVILEGES");
+
+        $stmtDb = $pdo->prepare("
+            INSERT INTO user_databases (domain_id, db_name, db_user, db_password)
+            VALUES (?, ?, ?, ?)
+        ");
+        $stmtDb->execute([$domainId, $dbName, $dbUser, $dbPasswordPlain]);
+
+        return [
+            'db_name' => $dbName,
+            'db_user' => $dbUser,
+            'db_password' => $dbPasswordPlain,
+        ];
+    } catch (Exception $e) {
+        try {
+            if ($dbUserCreated) {
+                $pdo->exec("DROP USER IF EXISTS {$escapedDbUser}@'%'");
+            }
+            if ($dbCreated) {
+                $pdo->exec("DROP DATABASE IF EXISTS {$escapedDbName}");
+            }
+        } catch (Exception $cleanupException) {
+        }
+
+        throw $e;
+    }
+}
+
+function dropDatabaseForDomain(PDO $pdo, int $domainId): void
+{
+    $stmtDb = $pdo->prepare("SELECT db_name, db_user FROM user_databases WHERE domain_id = ?");
+    $stmtDb->execute([$domainId]);
+    $dbData = $stmtDb->fetch(PDO::FETCH_ASSOC);
+
+    if (!$dbData) {
+        return;
+    }
+
+    $escapedDbName = escapeMysqlIdentifier($dbData['db_name']);
+    $escapedDbUser = escapeMysqlUser($dbData['db_user']);
+
+    $pdo->exec("DROP USER IF EXISTS {$escapedDbUser}@'%'");
+    $pdo->exec("DROP DATABASE IF EXISTS {$escapedDbName}");
+    $pdo->exec("FLUSH PRIVILEGES");
+}
+
 $userId = (int) $_SESSION['user_id'];
 
 $stmt = $pdo->prepare("SELECT id, username, ftp_password FROM users WHERE id = ?");
@@ -113,7 +223,7 @@ if (!$user) {
 }
 
 $username = $user['username'];
-$userRoot = __DIR__ . "/../users/" . $username;  // Původní funkční cesta
+$userRoot = __DIR__ . "/../users/" . $username;
 
 $ftpPasswordDecrypted = null;
 try {
@@ -124,19 +234,17 @@ try {
     $ftpPasswordDecrypted = null;
 }
 
-// --- AJAX endpoint pro získání seznamu souborů pro danou doménu ---
 if (isset($_GET['action']) && $_GET['action'] === 'get_files' && isset($_GET['domain'])) {
     header('Content-Type: application/json');
     $domain = trim($_GET['domain']);
-    
-    // Ověření, že doména patří uživateli
+
     $stmtCheck = $pdo->prepare("SELECT id FROM domains WHERE domain_name = ? AND user_id = ?");
     $stmtCheck->execute([$domain, $userId]);
     if (!$stmtCheck->fetch()) {
         echo json_encode(['error' => 'Doména neexistuje nebo k ní nemáte přístup.']);
         exit;
     }
-    
+
     $domainPath = $userRoot . "/" . $domain;
     if (is_dir($domainPath)) {
         $files = getFilesRecursive($domainPath);
@@ -147,13 +255,17 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_files' && isset($_GET['do
     exit;
 }
 
-// --- Smazání domény ---
+// Smazání domény + DB
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_domain_id'])) {
     $deleteDomainId = (int) $_POST['delete_domain_id'];
     $selectedDomain = $_POST['selected_domain'] ?? '';
 
     try {
-        $stmtCheck = $pdo->prepare("SELECT id, domain_name FROM domains WHERE id = ? AND user_id = ?");
+        $stmtCheck = $pdo->prepare("
+            SELECT d.id, d.domain_name
+            FROM domains d
+            WHERE d.id = ? AND d.user_id = ?
+        ");
         $stmtCheck->execute([$deleteDomainId, $userId]);
         $domainToDelete = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
@@ -162,6 +274,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_domain_id'])) 
         }
 
         $domainPath = $userRoot . "/" . $domainToDelete['domain_name'];
+        $domainsDir = __DIR__ . "/../domains";
+        $symlinkPath = $domainsDir . "/" . $domainToDelete['domain_name'];
+
+        dropDatabaseForDomain($pdo, $deleteDomainId);
 
         $pdo->beginTransaction();
 
@@ -170,13 +286,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_domain_id'])) 
 
         $pdo->commit();
 
+        if (is_link($symlinkPath) || file_exists($symlinkPath)) {
+            @unlink($symlinkPath);
+        }
+
         if (is_dir($domainPath) && !rrmdir($domainPath)) {
             $error = "Doména byla smazána z databáze, ale nepodařilo se odstranit její složku.";
         } else {
-            $success = "Doména " . $domainToDelete['domain_name'] . " byla úspěšně smazána.";
+            $success = "Doména " . $domainToDelete['domain_name'] . " byla úspěšně smazána včetně databáze.";
         }
 
-        // Přesměrování pro zachování vybrané domény (po smazání může být vybraná doména neplatná)
         $redirectDomain = ($selectedDomain !== $domainToDelete['domain_name']) ? $selectedDomain : '';
         header("Location: dashboard.php?selected_domain=" . urlencode($redirectDomain));
         exit;
@@ -185,11 +304,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_domain_id'])) 
             $pdo->rollBack();
         }
         $error = "Při mazání domény došlo k chybě: " . $e->getMessage();
-        // Zůstaneme na stránce s chybou
     }
 }
 
-// --- Přidání nové domény ---
+// Přidání nové domény + DB
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_domain'])) {
     $newDomain = trim($_POST['new_domain']);
 
@@ -213,6 +331,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_domain'])) {
 
             $stmtInsert = $pdo->prepare("INSERT INTO domains (user_id, domain_name) VALUES (?, ?)");
             $stmtInsert->execute([$userId, $newDomain]);
+            $domainId = (int) $pdo->lastInsertId();
 
             $pdo->commit();
 
@@ -232,8 +351,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_domain'])) {
                 }
             }
 
-            $success = "Doména byla úspěšně přidána.";
-            // Po přidání domény zůstaneme na stránce
+            $domainsDir = __DIR__ . "/../domains";
+            if (!is_dir($domainsDir) && !mkdir($domainsDir, 0775, true)) {
+                throw new Exception("Nepodařilo se vytvořit hlavní složku domains.");
+            }
+
+            $symlinkPath = $domainsDir . "/" . $newDomain;
+            if (!file_exists($symlinkPath)) {
+                $targetPath = "../users/" . $username . "/" . $newDomain;
+                if (!symlink($targetPath, $symlinkPath)) {
+                    throw new Exception("Nepodařilo se vytvořit symlink pro doménu.");
+                }
+            }
+
+            $newDbInfo = createDatabaseForDomain($pdo, $username, $newDomain, $domainId);
+
+            $success = "Doména byla úspěšně přidána včetně databáze.";
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -243,7 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_domain'])) {
     }
 }
 
-// --- Reset FTP hesla ---
+// Reset FTP hesla
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_ftp_password'])) {
     try {
         $newFtpPasswordPlain = bin2hex(random_bytes(4));
@@ -269,10 +402,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_ftp_password'])
     }
 }
 
-// --- Nahrání souborů přes FTP (více souborů, AJAX) ---
+// Upload
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_file'])) {
     $ajax = isset($_POST['ajax']) && $_POST['ajax'] === '1';
-    $domainName = trim($_POST['domain_name']);
+    $domainName = trim($_POST['domain_name'] ?? '');
     $files = $_FILES['files_to_upload'] ?? null;
 
     try {
@@ -292,23 +425,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_file'])) {
 
         $uploadedCount = 0;
         $errors = [];
-
         $filePaths = $_POST['file_paths'] ?? [];
 
-        foreach ($files['error'] as $index => $error) {
-            if ($error !== UPLOAD_ERR_OK) {
-                $errors[] = "Soubor '{$files['name'][$index]}' – chyba nahrávání (kód $error).";
+        foreach ($files['error'] as $index => $uploadError) {
+            if ($uploadError !== UPLOAD_ERR_OK) {
+                $errors[] = "Soubor '{$files['name'][$index]}' – chyba nahrávání (kód $uploadError).";
                 continue;
             }
 
-            // Získáme relativní cestu, pokud byla odeslána, jinak použijeme název souboru
             $remotePath = isset($filePaths[$index]) ? trim($filePaths[$index]) : basename($files['name'][$index]);
-            
-            // Bezpečnostní kontrola – nesmí obsahovat ".." a nesmí začínat lomítkem
+
             if (strpos($remotePath, '..') !== false || strpos($remotePath, '/') === 0) {
                 $errors[] = "Soubor '{$remotePath}' – neplatná cesta.";
                 continue;
             }
+
             if ($remotePath === '') {
                 $errors[] = "Soubor '{$files['name'][$index]}' – prázdná cesta.";
                 continue;
@@ -339,7 +470,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_file'])) {
         if ($uploadedCount > 0) {
             $success = "$uploadedCount souborů bylo úspěšně odesláno k nahrání na FTP server.";
             if (!empty($errors)) {
-                $error = implode('<br>', $errors);
+                $error = implode(' | ', $errors);
             }
         } else {
             throw new Exception("Žádný soubor nebyl nahrán. " . implode('; ', $errors));
@@ -360,10 +491,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_file'])) {
     }
 }
 
-// --- Smazání souboru přes FTP (přes křížek v seznamu) ---
+// Smazání souboru
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_file'])) {
-    $domainName = trim($_POST['domain_name']);
-    $remotePath = trim($_POST['remote_path']);
+    $domainName = trim($_POST['domain_name'] ?? '');
+    $remotePath = trim($_POST['remote_path'] ?? '');
     $selectedDomain = $_POST['selected_domain'] ?? '';
 
     try {
@@ -388,25 +519,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_file'])) {
 
         writeFtpRequest('delete_file', $username, null, $fileData);
 
-        // Po úspěšném odeslání requestu přesměrujeme zpět na dashboard.php s vybranou doménou
         header("Location: dashboard.php?selected_domain=" . urlencode($selectedDomain));
         exit;
     } catch (Exception $e) {
         $error = "Smazání selhalo: " . $e->getMessage();
-        // Zůstaneme na stránce s chybou
     }
 }
 
 $ftpPasswordPlainOnce = $_SESSION['ftp_password_plain_once'] ?? null;
 unset($_SESSION['ftp_password_plain_once']);
 
-$stmtDomains = $pdo->prepare("SELECT id, domain_name, created_at FROM domains WHERE user_id = ? ORDER BY id ASC");
+$stmtDomains = $pdo->prepare("
+    SELECT
+        d.id,
+        d.domain_name,
+        d.created_at,
+        ud.db_name,
+        ud.db_user,
+        ud.db_password
+    FROM domains d
+    LEFT JOIN user_databases ud ON ud.domain_id = d.id
+    WHERE d.user_id = ?
+    ORDER BY d.id ASC
+");
 $stmtDomains->execute([$userId]);
 $domains = $stmtDomains->fetchAll(PDO::FETCH_ASSOC);
 
-// Určení aktuálně vybrané domény pro zobrazení souborů
 $selectedDomainForFiles = $_GET['selected_domain'] ?? '';
-if ($selectedDomainForFiles && !in_array($selectedDomainForFiles, array_column($domains, 'domain_name'))) {
+if ($selectedDomainForFiles && !in_array($selectedDomainForFiles, array_column($domains, 'domain_name'), true)) {
     $selectedDomainForFiles = '';
 }
 if (!$selectedDomainForFiles && !empty($domains)) {
@@ -415,7 +555,6 @@ if (!$selectedDomainForFiles && !empty($domains)) {
 
 $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce : $ftpPasswordDecrypted;
 ?>
-
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -423,53 +562,6 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Administrace - Milanovo Hosting</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .file-drop-zone {
-            border: 2px dashed #ccc;
-            border-radius: 8px;
-            padding: 1rem;
-            text-align: center;
-            background: #f9f9f9;
-        }
-        .file-list-container {
-            margin-top: 1rem;
-            text-align: left;
-        }
-        .file-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.5rem;
-            border-bottom: 1px solid #eee;
-        }
-        .file-name {
-            word-break: break-all;
-        }
-        .remove-file-btn {
-            background: none;
-            border: none;
-            color: #dc3545;
-            cursor: pointer;
-            font-size: 1.2rem;
-            padding: 0 0.5rem;
-        }
-        .remove-file-btn:hover {
-            color: #a71d2a;
-        }
-        .domain-selector {
-            margin-bottom: 1rem;
-        }
-        .loading {
-            color: #666;
-            font-style: italic;
-        }
-        .domain-selector {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-    </style>
 </head>
 <body>
     <div class="page-shell">
@@ -480,9 +572,9 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
         <main class="dashboard-layout dashboard-layout-wide">
             <section class="dashboard-header dashboard-header-wide">
                 <div class="eyebrow">Administrace hostingu</div>
-                <h1>Vítejte, <?php echo htmlspecialchars($user['username']); ?>!</h1>
+                <h1>Vítejte, <?php echo htmlspecialchars($user['username'], ENT_QUOTES, 'UTF-8'); ?>!</h1>
                 <p class="hero-text">
-                    Přehled vašeho hostingu, domén a FTP přístupů na jednom místě.
+                    Přehled vašeho hostingu, FTP a databází na jednom místě.
                 </p>
             </section>
 
@@ -491,81 +583,160 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                     <div>
                         <div class="card-badge">Dashboard</div>
                         <h2>Správa hostingu</h2>
-                        <p>Přehled vašeho účtu a aktuálního nastavení.</p>
+                        <p>Přehled účtu, FTP přístupů a databázových údajů.</p>
                     </div>
 
                     <a href="logout.php" class="secondary-btn dashboard-logout">Odhlásit se</a>
                 </div>
 
                 <?php if (isset($success)): ?>
-                    <p class="success-message"><?php echo htmlspecialchars($success); ?></p>
+                    <p class="success-message"><?php echo htmlspecialchars($success, ENT_QUOTES, 'UTF-8'); ?></p>
                 <?php endif; ?>
 
                 <?php if (isset($error)): ?>
-                    <p class="form-error"><?php echo htmlspecialchars($error); ?></p>
+                    <p class="form-error"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
                 <?php endif; ?>
 
                 <?php if ($ftpPasswordPlainOnce !== null): ?>
                     <p class="success-message">
-                        Nové FTP heslo bylo vygenerováno: <strong><?php echo htmlspecialchars($ftpPasswordPlainOnce); ?></strong>
+                        Nové FTP heslo bylo vygenerováno:
+                        <strong><?php echo htmlspecialchars($ftpPasswordPlainOnce, ENT_QUOTES, 'UTF-8'); ?></strong>
                     </p>
                 <?php endif; ?>
 
-                <div class="dashboard-grid">
-                    <div class="dashboard-item dashboard-item-wide">
-                        <div class="domain-card-head">
-                            <span class="dashboard-label">Vaše domény</span>
-                            <span class="domains-count"><?php echo count($domains); ?> celkem</span>
+                <?php if (isset($newDbInfo)): ?>
+                    <p class="success-message">
+                        Nová databáze:
+                        <strong><?php echo htmlspecialchars($newDbInfo['db_name'], ENT_QUOTES, 'UTF-8'); ?></strong>,
+                        uživatel:
+                        <strong><?php echo htmlspecialchars($newDbInfo['db_user'], ENT_QUOTES, 'UTF-8'); ?></strong>,
+                        heslo:
+                        <strong><?php echo htmlspecialchars($newDbInfo['db_password'], ENT_QUOTES, 'UTF-8'); ?></strong>
+                    </p>
+                <?php endif; ?>
+
+                <div class="service-section">
+                    <div class="dashboard-panel-top dashboard-panel-top-compact">
+                        <div>
+                            <div class="card-badge">FTP</div>
+                            <h2>FTP přístup</h2>
+                            <p>Přístupy pro nahrávání souborů na web.</p>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="dashboard-item">
+                            <span class="dashboard-label">FTP hostitel</span>
+                            <span class="dashboard-value">127.0.0.1</span>
+                            <span class="dashboard-note">Port 21</span>
                         </div>
 
-                        <?php if (!empty($domains)): ?>
-                            <div class="domains-list domains-list-with-actions">
-                                <?php foreach ($domains as $domain): ?>
-                                    <div class="domain-row">
-                                        <div class="domain-pill">
-                                            <span class="domain-pill-dot"></span>
-                                            <span class="domain-pill-text"><?php echo htmlspecialchars($domain['domain_name']); ?></span>
-                                        </div>
+                        <div class="dashboard-item">
+                            <span class="dashboard-label">FTP uživatel</span>
+                            <span class="dashboard-value"><?php echo htmlspecialchars($user['username'], ENT_QUOTES, 'UTF-8'); ?></span>
+                            <span class="dashboard-note">Přístup k vašemu účtu</span>
+                        </div>
 
-                                        <form method="POST" class="domain-delete-form" onsubmit="return confirm('Opravdu chcete smazat doménu <?php echo htmlspecialchars($domain['domain_name']); ?>?');">
-                                            <input type="hidden" name="delete_domain_id" value="<?php echo (int) $domain['id']; ?>">
-                                            <input type="hidden" name="selected_domain" value="<?php echo htmlspecialchars($selectedDomainForFiles); ?>">
-                                            <button type="submit" class="delete-domain-btn">Smazat</button>
-                                        </form>
-                                    </div>
-                                <?php endforeach; ?>
+                        <div class="dashboard-item">
+                            <span class="dashboard-label">FTP heslo</span>
+                            <span class="dashboard-value value-mono">
+                                <?php echo $displayedFtpPassword !== null ? htmlspecialchars($displayedFtpPassword, ENT_QUOTES, 'UTF-8') : 'Nelze zobrazit heslo'; ?>
+                            </span>
+                            <span class="dashboard-note">Heslo k FTP účtu</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-divider"></div>
+
+                <div class="service-section">
+                    <div class="dashboard-panel-top dashboard-panel-top-compact">
+                        <div>
+                            <div class="card-badge">Databáze</div>
+                            <h2>Databázové přístupy</h2>
+                            <p>Každá doména má vlastní databázi a vlastního DB uživatele.</p>
+                        </div>
+
+                        <a href="<?php echo htmlspecialchars($dbAdminUrl, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" class="primary-link-btn">
+                            Otevřít DB administraci
+                        </a>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="dashboard-item">
+                            <span class="dashboard-label">DB server</span>
+                            <span class="dashboard-value">database</span>
+                            <span class="dashboard-note">Host databáze v Dockeru</span>
+                        </div>
+
+                        <div class="dashboard-item">
+                            <span class="dashboard-label">DB port</span>
+                            <span class="dashboard-value">3306</span>
+                            <span class="dashboard-note">Standardní MariaDB port</span>
+                        </div>
+
+                        <div class="dashboard-item">
+                            <span class="dashboard-label">DB administrace</span>
+                            <span class="dashboard-value">Adminer</span>
+                            <span class="dashboard-note">Přes odkaz výše otevřete správu databází</span>
+                        </div>
+
+                        <div class="dashboard-item dashboard-item-wide">
+                            <div class="domain-card-head">
+                                <span class="dashboard-label">Domény a databáze</span>
+                                <span class="domains-count"><?php echo count($domains); ?> celkem</span>
                             </div>
-                        <?php else: ?>
-                            <span class="dashboard-value dashboard-value-empty">Žádná doména nebyla nalezena</span>
-                        <?php endif; ?>
-                    </div>
 
-                    <div class="dashboard-item">
-                        <span class="dashboard-label">FTP hostitel</span>
-                        <span class="dashboard-value">127.0.0.1</span>
-                        <span class="dashboard-note">Port 21</span>
-                    </div>
+                            <?php if (!empty($domains)): ?>
+                                <div class="db-domains-list">
+                                    <?php foreach ($domains as $domain): ?>
+                                        <div class="db-domain-card">
+                                            <div class="db-domain-top">
+                                                <div class="domain-pill">
+                                                    <span class="domain-pill-dot"></span>
+                                                    <span class="domain-pill-text"><?php echo htmlspecialchars($domain['domain_name'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                </div>
 
-                    <div class="dashboard-item">
-                        <span class="dashboard-label">FTP uživatel</span>
-                        <span class="dashboard-value"><?php echo htmlspecialchars($user['username']); ?></span>
-                        <span class="dashboard-note">Přístup k vašemu účtu</span>
-                    </div>
+                                                <form method="POST" class="domain-delete-form" onsubmit="return confirm('Opravdu chcete smazat doménu <?php echo htmlspecialchars($domain['domain_name'], ENT_QUOTES, 'UTF-8'); ?> včetně databáze?');">
+                                                    <input type="hidden" name="delete_domain_id" value="<?php echo (int) $domain['id']; ?>">
+                                                    <input type="hidden" name="selected_domain" value="<?php echo htmlspecialchars($selectedDomainForFiles, ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <button type="submit" class="delete-domain-btn">Smazat</button>
+                                                </form>
+                                            </div>
 
-                    <div class="dashboard-item">
-                        <span class="dashboard-label">FTP heslo</span>
-                        <span class="dashboard-value">
-                            <?php echo $displayedFtpPassword !== null ? htmlspecialchars($displayedFtpPassword) : 'Nelze zobrazit heslo'; ?>
-                        </span>
-                        <span class="dashboard-note">Heslo k FTP účtu</span>
-                    </div>
+                                            <div class="db-info-grid">
+                                                <div class="db-info-item">
+                                                    <span class="dashboard-label">Databáze</span>
+                                                    <span class="dashboard-value value-mono"><?php echo htmlspecialchars($domain['db_name'] ?? 'Nevytvořena', ENT_QUOTES, 'UTF-8'); ?></span>
+                                                </div>
 
-                    <div class="dashboard-item dashboard-item-wide">
-                        <span class="dashboard-label">Stav hostingu</span>
-                        <div class="status-row">
-                            <span class="status-active">Aktivní</span>
-                            <span class="dashboard-note">Služba je dostupná a připravena k použití</span>
+                                                <div class="db-info-item">
+                                                    <span class="dashboard-label">DB uživatel</span>
+                                                    <span class="dashboard-value value-mono"><?php echo htmlspecialchars($domain['db_user'] ?? 'Nevytvořen', ENT_QUOTES, 'UTF-8'); ?></span>
+                                                </div>
+
+                                                <div class="db-info-item">
+                                                    <span class="dashboard-label">DB heslo</span>
+                                                    <span class="dashboard-value value-mono"><?php echo htmlspecialchars($domain['db_password'] ?? 'Není dostupné', ENT_QUOTES, 'UTF-8'); ?></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else: ?>
+                                <span class="dashboard-value dashboard-value-empty">Žádná doména nebyla nalezena</span>
+                            <?php endif; ?>
                         </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-divider"></div>
+
+                <div class="dashboard-item dashboard-item-wide">
+                    <span class="dashboard-label">Stav hostingu</span>
+                    <div class="status-row">
+                        <span class="status-active">Aktivní</span>
+                        <span class="dashboard-note">Služba je dostupná a připravena k použití</span>
                     </div>
                 </div>
 
@@ -591,7 +762,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                     <div>
                         <div class="card-badge">Nová doména</div>
                         <h2>Přidat další doménu</h2>
-                        <p>Zadejte název nové domény, kterou chcete přidat ke svému účtu.</p>
+                        <p>Zadáním nové domény se vytvoří i její samostatná databáze.</p>
                     </div>
                 </div>
 
@@ -606,12 +777,11 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
 
                 <div class="dashboard-divider"></div>
 
-                <!-- Nahrání souboru (více souborů, AJAX) -->
                 <div class="dashboard-panel-top dashboard-panel-top-compact">
                     <div>
                         <div class="card-badge">Správa souborů</div>
                         <h2>Nahrát soubory přes FTP</h2>
-                        <p>Vyberte soubory, zobrazí se jejich seznam. Můžete jednotlivé soubory odebrat před nahráním.</p>
+                        <p>Vyberte soubory nebo celou složku. Před nahráním lze jednotlivé soubory odebrat.</p>
                     </div>
                 </div>
 
@@ -621,7 +791,9 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                         <select name="domain_name" id="domain_name_upload" required>
                             <option value="">Vyberte doménu</option>
                             <?php foreach ($domains as $domain): ?>
-                                <option value="<?php echo htmlspecialchars($domain['domain_name']); ?>"><?php echo htmlspecialchars($domain['domain_name']); ?></option>
+                                <option value="<?php echo htmlspecialchars($domain['domain_name'], ENT_QUOTES, 'UTF-8'); ?>">
+                                    <?php echo htmlspecialchars($domain['domain_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                </option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -644,7 +816,6 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
 
                 <div class="dashboard-divider"></div>
 
-                <!-- Seznam souborů pro vybranou doménu (načítá se AJAXem) -->
                 <div class="dashboard-panel-top dashboard-panel-top-compact">
                     <div>
                         <div class="card-badge">Správa souborů</div>
@@ -657,8 +828,8 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                     <label for="domain_selector">Doména:</label>
                     <select id="domain_selector" name="domain_selector">
                         <?php foreach ($domains as $domain): ?>
-                            <option value="<?php echo htmlspecialchars($domain['domain_name']); ?>" <?php echo $selectedDomainForFiles === $domain['domain_name'] ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($domain['domain_name']); ?>
+                            <option value="<?php echo htmlspecialchars($domain['domain_name'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $selectedDomainForFiles === $domain['domain_name'] ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($domain['domain_name'], ENT_QUOTES, 'UTF-8'); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -685,7 +856,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                             }
                         });
                     }
-                    
+
                     const selectFolderBtn = document.getElementById('selectFolderBtn');
                     const hiddenFolderInput = document.getElementById('hiddenFolderInput');
 
@@ -696,9 +867,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                     hiddenFolderInput.addEventListener('change', function(e) {
                         const files = Array.from(e.target.files);
                         files.forEach(file => {
-                            // Získáme relativní cestu (např. "slozka/podadresar/soubor.txt")
                             let relativePath = file.webkitRelativePath || file.name;
-                            // Ověříme, zda už stejná cesta není v seznamu (podle cesty a velikosti)
                             const exists = selectedFiles.some(f => f.remotePath === relativePath && f.file.size === file.size);
                             if (!exists) {
                                 selectedFiles.push({ file, remotePath: relativePath });
@@ -706,40 +875,40 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                         });
                         renderFileList();
                         hiddenFolderInput.value = '';
-                    });    
+                    });
 
-                    // Funkce pro načtení souborů pro danou doménu
                     async function loadFilesForDomain(domain) {
                         if (!domain) {
                             filesContainer.innerHTML = '<p class="no-files">Vyberte doménu.</p>';
                             return;
                         }
+
                         filesContainer.innerHTML = '<p class="loading">Načítám soubory...</p>';
-                        
+
                         try {
                             const response = await fetch(`?action=get_files&domain=${encodeURIComponent(domain)}`);
                             const data = await response.json();
-                            
+
                             if (data.error) {
                                 filesContainer.innerHTML = `<p class="form-error">${escapeHtml(data.error)}</p>`;
                                 return;
                             }
-                            
+
                             const files = data.files || [];
                             if (files.length === 0) {
                                 filesContainer.innerHTML = '<p class="no-files">Žádné soubory</p>';
                                 return;
                             }
-                            
+
                             let html = '<ul class="file-list">';
                             files.forEach(file => {
                                 html += `
                                     <li class="file-item">
                                         <span class="file-name">${escapeHtml(file)}</span>
                                         <form method="POST" class="delete-file-form" style="display: inline;" onsubmit="return confirm('Opravdu chcete smazat soubor ${escapeHtml(file)}?');">
-                                            <input type="hidden" name="domain_name" value="${escapeHtml(domain)}">
-                                            <input type="hidden" name="remote_path" value="${escapeHtml(file)}">
-                                            <input type="hidden" name="selected_domain" value="${escapeHtml(domain)}">
+                                            <input type="hidden" name="domain_name" value="${escapeAttr(domain)}">
+                                            <input type="hidden" name="remote_path" value="${escapeAttr(file)}">
+                                            <input type="hidden" name="selected_domain" value="${escapeAttr(domain)}">
                                             <button type="submit" name="delete_file" value="1" class="delete-file-btn" title="Smazat soubor">✖</button>
                                         </form>
                                     </li>
@@ -751,17 +920,23 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                             filesContainer.innerHTML = `<p class="form-error">Chyba při načítání: ${escapeHtml(err.message)}</p>`;
                         }
                     }
-                    
+
                     function escapeHtml(str) {
-                        return str.replace(/[&<>]/g, function(m) {
-                            if (m === '&') return '&amp;';
-                            if (m === '<') return '&lt;';
-                            if (m === '>') return '&gt;';
-                            return m;
+                        return String(str).replace(/[&<>"']/g, function(m) {
+                            return {
+                                '&': '&amp;',
+                                '<': '&lt;',
+                                '>': '&gt;',
+                                '"': '&quot;',
+                                "'": '&#039;'
+                            }[m];
                         });
                     }
-                    
-                    // Při změně domény načteme soubory a aktualizujeme URL
+
+                    function escapeAttr(str) {
+                        return escapeHtml(str);
+                    }
+
                     domainSelector.addEventListener('change', function() {
                         const newDomain = this.value;
                         currentDomain = newDomain;
@@ -770,29 +945,26 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                         url.searchParams.set('selected_domain', newDomain);
                         window.history.replaceState({}, '', url);
                     });
-                    
-                    // Při prvním načtení stránky načteme soubory pro výchozí doménu
+
                     if (currentDomain) {
                         loadFilesForDomain(currentDomain);
                     } else {
                         filesContainer.innerHTML = '<p class="no-files">Vyberte doménu.</p>';
                     }
-                    
-                    // ------------------------------------------------------------
-                    // Kód pro nahrávání souborů (AJAX)
+
                     const selectBtn = document.getElementById('selectFilesBtn');
                     const hiddenInput = document.getElementById('hiddenFileInput');
                     const fileListContainer = document.getElementById('fileListContainer');
                     const uploadForm = document.getElementById('uploadForm');
                     const uploadSubmitBtn = document.getElementById('uploadSubmitBtn');
                     const messagesDiv = document.getElementById('uploadMessages');
-                    
+
                     let selectedFiles = [];
-                    
+
                     selectBtn.addEventListener('click', function() {
                         hiddenInput.click();
                     });
-                    
+
                     hiddenInput.addEventListener('change', function(e) {
                         const files = Array.from(e.target.files);
                         files.forEach(file => {
@@ -805,12 +977,13 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                         renderFileList();
                         hiddenInput.value = '';
                     });
-                    
+
                     function renderFileList() {
                         if (selectedFiles.length === 0) {
                             fileListContainer.innerHTML = '<p class="no-files">Zatím nebyly vybrány žádné soubory.</p>';
                             return;
                         }
+
                         let html = '<ul class="file-list">';
                         selectedFiles.forEach((item, index) => {
                             html += `
@@ -822,7 +995,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                         });
                         html += '</ul>';
                         fileListContainer.innerHTML = html;
-                        
+
                         document.querySelectorAll('.remove-file-btn').forEach(btn => {
                             btn.addEventListener('click', function() {
                                 const idx = parseInt(this.getAttribute('data-index'), 10);
@@ -831,47 +1004,47 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                             });
                         });
                     }
-                    
+
                     uploadForm.addEventListener('submit', async function(e) {
                         e.preventDefault();
-                        
+
                         if (selectedFiles.length === 0) {
                             showMessage('Žádné soubory k nahrání.', 'error');
                             return;
                         }
-                        
+
                         const domain = document.getElementById('domain_name_upload').value;
                         if (!domain) {
                             showMessage('Vyberte doménu.', 'error');
                             return;
                         }
-                        
+
                         const formData = new FormData();
                         formData.append('upload_file', '1');
                         formData.append('ajax', '1');
                         formData.append('domain_name', domain);
+
                         selectedFiles.forEach(item => {
                             formData.append('files_to_upload[]', item.file, item.file.name);
                             formData.append('file_paths[]', item.remotePath);
                         });
-                        
+
                         uploadSubmitBtn.disabled = true;
                         uploadSubmitBtn.textContent = 'Nahrávám...';
-                        
+
                         try {
                             const response = await fetch(window.location.href, {
                                 method: 'POST',
                                 body: formData
                             });
                             const data = await response.json();
-                            
+
                             if (data.error) {
                                 showMessage(data.error, 'error');
                             } else if (data.success) {
                                 showMessage(data.success, 'success');
                                 selectedFiles = [];
                                 renderFileList();
-                                // Po nahrání obnovíme seznam souborů pro aktuální doménu
                                 const currentDomainForFiles = document.getElementById('domain_selector').value;
                                 loadFilesForDomain(currentDomainForFiles);
                             } else {
@@ -884,7 +1057,7 @@ $displayedFtpPassword = $ftpPasswordPlainOnce !== null ? $ftpPasswordPlainOnce :
                             uploadSubmitBtn.textContent = 'Nahrát soubory';
                         }
                     });
-                    
+
                     function showMessage(msg, type) {
                         messagesDiv.innerHTML = `<p class="${type === 'error' ? 'form-error' : 'success-message'}">${escapeHtml(msg)}</p>`;
                         setTimeout(() => {

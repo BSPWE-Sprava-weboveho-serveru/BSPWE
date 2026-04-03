@@ -1,39 +1,30 @@
 <?php
 session_start();
-
-// Připojení k databázi
 require_once 'db.php';
 
-// Zpracování přihlášení
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    
-    // Načtení údajů z formuláře
-    $user = trim($_POST['username']);
-    $pass = $_POST['password'];
+    $user = trim($_POST['username'] ?? '');
+    $pass = $_POST['password'] ?? '';
 
-    // Nalezení uživatele v databázi podle jména
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
-    $stmt->execute([$user]);
-    $dbUser = $stmt->fetch();
-
-    // Pokud uživatel existuje a heslo souhlasí
-    if ($dbUser && password_verify($pass, $dbUser['password'])) {
-        
-        // Uložení údajů do session
-        $_SESSION['user_id'] = $dbUser['id'];
-        $_SESSION['username'] = $dbUser['username'];
-
-        // Přesměrování na dashboard
-        header("Location: dashboard.php");
-        exit;
-
+    if ($user === '' || $pass === '') {
+        $error = "Vyplňte uživatelské jméno i heslo.";
     } else {
-        // Chybová hláška při neúspěšném přihlášení
-        $error = "Špatné jméno nebo heslo.";
+        $stmt = $pdo->prepare("SELECT id, username, password FROM users WHERE username = ?");
+        $stmt->execute([$user]);
+        $dbUser = $stmt->fetch();
+
+        if ($dbUser && password_verify($pass, $dbUser['password'])) {
+            $_SESSION['user_id'] = $dbUser['id'];
+            $_SESSION['username'] = $dbUser['username'];
+
+            header("Location: dashboard.php");
+            exit;
+        } else {
+            $error = "Špatné jméno nebo heslo.";
+        }
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -49,12 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <main class="hero">
-
             <section class="hero-copy">
                 <div class="eyebrow">Moderní webhosting</div>
-
                 <h1>Přihlaste se do svého účtu</h1>
-
                 <p class="hero-text">
                     Přístup ke správě vašeho hostingu, domény a administrace v moderním a přehledném rozhraní.
                 </p>
@@ -83,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
 
                     <?php if (isset($error)): ?>
-                        <p class="form-error"><?php echo htmlspecialchars($error); ?></p>
+                        <p class="form-error"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
                     <?php endif; ?>
 
                     <form method="POST" class="register-form">
@@ -109,6 +97,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </main>
     </div>
 
-<script src="theme.js"></script>
+    <script src="theme.js"></script>
 </body>
 </html>

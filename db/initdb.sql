@@ -13,5 +13,17 @@ CREATE TABLE IF NOT EXISTS domains (
     user_id INT NOT NULL,
     domain_name VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    CONSTRAINT fk_domains_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS user_databases (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    domain_id INT NOT NULL,
+    db_name VARCHAR(100) NOT NULL UNIQUE,
+    db_user VARCHAR(100) NOT NULL UNIQUE,
+    db_password VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_user_databases_domain
+        FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
 );

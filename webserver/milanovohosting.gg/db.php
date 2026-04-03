@@ -1,26 +1,22 @@
 <?php
-// Parametry pro připojení (shodují se s docker-compose.yaml)
-$host = 'database';      // Název služby v Dockeru
-$user = 'root';          // Výchozí uživatel
-$pass = 'maria';         // Heslo, které je v docker-compose
-$db   = 'hosting_centrum'; // Název datáze (tuhle se pak vytvoří v Admineru)
-$charset = 'utf8mb4';    // Podpora pro českou diakritiku
+$host = 'database';
+$port = 3306;
+$user = 'root';
+$pass = 'maria';
+$db = 'hosting_centrum';
+$charset = 'utf8mb4';
 
-// DSN (Data Source Name) - takový ?"�t�tek" pro ovladač
-$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+$dsn = "mysql:host=$host;port=$port;dbname=$db;charset=$charset";
 
-// Nastavení, jak se má PHP chovat při chybách
 $options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // Hlásit chyby jako vyjímky
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,       // Výsledky z DB vracet jako pole
-    PDO::ATTR_EMULATE_PREPARES   => false,                  // ?Zv��en� bezpečnosti
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES => false,
 ];
 
 try {
-    // Pokus o vytvoření spojení
     $pdo = new PDO($dsn, $user, $pass, $options);
-} catch (\PDOException $e) {
-    // Pokud se to nepovede, vypiš chybu
+} catch (PDOException $e) {
     die("Nepodařilo se připojit k databázi: " . $e->getMessage());
 }
 ?>

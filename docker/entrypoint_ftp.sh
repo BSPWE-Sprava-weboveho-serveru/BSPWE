@@ -54,7 +54,6 @@ process_requests() {
             TYPE=$(sed -n 's/.*"type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file")
             USERNAME=$(sed -n 's/.*"username"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file")
             PASSWORD=$(sed -n 's/.*"ftp_password_plain"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file")
-
             if [ -z "$TYPE" ] || [ -z "$USERNAME" ]; then
                 echo "Neplatny request soubor: $file"
                 mv "$file" "$file.invalid"
@@ -90,6 +89,12 @@ EOF
                     echo "Request reset_password nema heslo: $file"
                     mv "$file" "$file.invalid"
                 fi
+            elif [ "$TYPE" = "upload_file" ]; then
+    			echo "Zpracovavam nahrani souboru pro: $USERNAME"
+    			/upload_file.sh "$file"
+		    elif [ "$TYPE" = "delete_file" ]; then
+    			echo "Zpracovavam smazani souboru pro: $USERNAME"
+   			    /delete_file.sh "$file"
             else
                 echo "Neznamy typ requestu: $TYPE"
                 mv "$file" "$file.invalid"

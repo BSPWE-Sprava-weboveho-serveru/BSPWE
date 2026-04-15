@@ -1,0 +1,118 @@
+:root { 
+    --bg: #141619; 
+    --card-bg: #22252a; 
+    --header-bg: #2a2e35;
+    --accent-blue: #0091ff;
+    --accent-green: #32d74b;
+    --accent-red: #ff453a;
+    --text: #ffffff;
+    --text-dim: #8e8e93;
+    --bar-h: 75px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body { 
+    height: 100vh; 
+    width: 100vw; 
+    margin: 0; 
+    overflow: hidden; 
+    background: var(--bg); 
+    font-family: 'Inter', -apple-system, sans-serif; 
+    color: var(--text); 
+}
+
+#main-container { 
+    flex: 1; 
+    width: 100vw; 
+    padding: 12px; 
+    display: flex; 
+    height: calc(100vh - var(--bar-h)); 
+}
+
+.dashboard-grid {
+    display: grid; 
+    width: 100%; 
+    height: 100%; 
+    gap: 12px;
+    grid-template-columns: repeat(4, 1fr); 
+    grid-template-rows: repeat(4, 1fr);
+}
+
+/* KARTY */
+.card {
+    background: var(--card-bg);
+    border: 1px solid #3a3f4b;
+    border-radius: 8px;
+    display: flex; 
+    flex-direction: column;
+    overflow: hidden; 
+    touch-action: none;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+    position: relative;
+}
+
+.card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent-blue);
+}
+.card.green-st::before { background: var(--accent-green); }
+.card.red-st::before { background: var(--accent-red); }
+
+.card-header { 
+    padding: 8px 12px; font-size: 0.75rem; font-weight: 600; 
+    background: var(--header-bg); border-bottom: 1px solid #3a3f4b;
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;
+    display: flex; justify-content: space-between;
+}
+
+.card-body { 
+    flex: 1; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    padding: 10px; 
+}
+
+.main-val { 
+    font-size: 2.2rem; 
+    font-weight: 700; 
+    color: var(--text); 
+    text-shadow: 0 0 15px rgba(255,255,255,0.1); 
+}
+
+.sub-val { font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; }
+
+/* DRAG & DROP EFEKTY */
+.sortable-drag { opacity: 0.9 !important; transform: scale(1.03); box-shadow: 0 25px 50px rgba(0,0,0,0.6) !important; z-index: 9999; }
+.sortable-ghost { opacity: 0.05; background: #fff !important; }
+
+/* SPODNÍ LIŠTA */
+.bottom-bar { 
+    height: var(--bar-h); 
+    background: #1c1e22; 
+    display: flex; 
+    align-items: center; 
+    justify-content: space-between; 
+    padding: 0 25px; 
+    border-top: 1px solid #2a2e35; 
+}
+
+.btn-group { display: flex; gap: 12px; }
+
+button { 
+    background: #2a2e35; color: white; border: 1px solid #3a3f4b; 
+    padding: 12px 22px; border-radius: 8px; font-weight: 600; font-size: 0.85rem; 
+    cursor: pointer; transition: all 0.2s;
+}
+
+button:active { transform: scale(0.95); }
+button.btn-save { background: var(--accent-blue); border-color: var(--accent-blue); }
+button.btn-save.saved { background: var(--accent-green); border-color: var(--accent-green); }
+
+#lockBtn.locked { color: var(--accent-red); border-color: var(--accent-red); }
+
+/* RESPONSIVITA */
+@media (orientation: portrait) { 
+    .dashboard-grid { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(8, 1fr); } 
+}

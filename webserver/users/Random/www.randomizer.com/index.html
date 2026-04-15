@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rozhodovač</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col items-center p-4">
+  <main class="w-full max-w-xl">
+    <header class="w-full max-w-xl text-center mb-6">
+      <h1 class="text-3xl font-bold">Rozhodovač</h1>
+      <p class="text-sm text-gray-500 mt-2">Pomocník při rozhodování – zadej možnosti a rozhodne za tebe!</p>
+    </header>
+
+    <section class="bg-white rounded-xl shadow p-4 mb-6 w-full max-w-xl">
+    <section class="bg-white rounded-xl shadow p-4 mb-6 w-full max-w-xl">
+      <h2 class="text-lg font-semibold mb-2">Možnosti</h2>
+      <input
+        id="options-input"
+        type="text"
+        class="p-2 border rounded w-full"
+        placeholder="Zadej možnosti, oddělené čárkami"
+      />
+    </section>
+
+    <section class="bg-white rounded-xl shadow p-4 mb-6 w-full max-w-xl">
+      <label for="target-count" class="block text-sm text-gray-600 mb-2">Na kolik výtězných?</label>
+      <input
+        id="target-count"
+        type="number"
+        class="p-2 border rounded w-full"
+        value="1"
+        min="1"
+      />
+    </section>
+
+    <section class="mb-6">
+      <button id="decide-btn" class="bg-blue-500 text-white px-10 py-3 rounded shadow-lg hover:bg-blue-600">
+        Rozhodnout!
+      </button>
+    </section>
+    </section>
+
+    <section id="options-card" class="bg-white rounded-xl shadow p-4 mb-6 w-full max-w-xl hidden">
+      <h2 class="text-xl font-semibold mb-2">Průběh výběru</h2>
+      <ul id="options-list" class="space-y-2 text-sm text-gray-600"></ul>
+    </section>
+
+    <section id="result-card" class="bg-white rounded-xl shadow p-4 mb-6 w-full max-w-xl hidden">
+      <h2 class="text-xl font-semibold mb-2">Výsledek</h2>
+      <div id="result" class="text-2xl font-bold text-green-500"></div>
+    </section>
+
+    <section class="bg-white rounded-xl shadow p-4 mb-6 w-full max-w-xl">
+      <h2 class="text-xl font-semibold mb-2">Historie rozhodnutí</h2>
+      <ul id="history-list" class="space-y-2 text-sm text-gray-600"></ul>
+      <button
+        id="clear-history-btn"
+        class="mt-4 bg-red-500 text-white px-5 py-2 rounded shadow hover:bg-red-600"
+      >
+        Vymazat historii
+      </button>
+    </section>
+  </main>
+
+  <footer class="mt-auto text-sm text-gray-500 pt-4">
+    &copy; Oliver Mochal semestrální práce 2025. Všechna práva vyhrazena (samozřejmě).
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

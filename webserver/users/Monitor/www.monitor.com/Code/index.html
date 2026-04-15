@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro-Industrial Dashboard</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="main-container">
+        <div id="items-grid" class="dashboard-grid">
+            <div class="card green-st" data-id="1">
+                <div class="card-header">Výkon Linky 01 <span>● Live</span></div>
+                <div class="card-body"><div class="main-val">1,284</div><div class="sub-val">ks / směna</div></div>
+            </div>
+            <div class="card" data-id="2">
+                <div class="card-header">Produkce Trend</div>
+                <div class="card-body"><canvas id="c1"></canvas></div>
+            </div>
+            <div class="card green-st" data-id="3">
+                <div class="card-header">OEE Celkové</div>
+                <div class="card-body"><div class="main-val">84.2%</div></div>
+            </div>
+            <div class="card red-st" data-id="4">
+                <div class="card-header">Chybovost</div>
+                <div class="card-body"><div class="main-val" style="color:var(--accent-red)">2.1%</div><div class="sub-val">Limit: 1.5%</div></div>
+            </div>
+            <div class="card" data-id="5">
+                <div class="card-header">Zatížení sítě</div>
+                <div class="card-body"><canvas id="c2"></canvas></div>
+            </div>
+            <div class="card" data-id="6"><div class="card-header">Teplota</div><div class="card-body"><div class="main-val">24°C</div></div></div>
+            <div class="card" data-id="7"><div class="card-header">Tlak</div><div class="card-body"><div class="main-val">6.2 b</div></div></div>
+            <div class="card green-st" data-id="8"><div class="card-header">Stav</div><div class="card-body"><div class="main-val">RUN</div></div></div>
+            
+            <div class="card" data-id="9"><div class="card-body">9</div></div>
+            <div class="card" data-id="10"><div class="card-body">10</div></div>
+            <div class="card" data-id="11"><div class="card-body">11</div></div>
+            <div class="card" data-id="12"><div class="card-body">12</div></div>
+            <div class="card" data-id="13"><div class="card-body">13</div></div>
+            <div class="card" data-id="14"><div class="card-body">14</div></div>
+            <div class="card" data-id="15"><div class="card-body">15</div></div>
+            <div class="card" data-id="16"><div class="card-body">16</div></div>
+        </div>
+    </div>
+
+    <div class="bottom-bar">
+        <div style="display:flex; flex-direction:column;">
+            <span style="font-weight:700; font-size:0.9rem;">HMI DASHBOARD</span>
+            <span style="font-size:0.7rem; color:var(--text-dim);">TERMINAL ID: IPAD-04-V2</span>
+        </div>
+        <div class="btn-group">
+            <button onclick="resetDashboard()">RESET</button>
+            <button id="lockBtn" onclick="toggleLock()">ZAMKNOUT</button>
+            <button class="btn-save" id="saveBtn" onclick="manualSave()">ULOŽIT KONFIGURACI</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

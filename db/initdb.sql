@@ -25,6 +25,7 @@ USE `db_www_mrcamel_com_5efcd47a`;
 CREATE DATABASE `db_www_randomizer_com_8ba7f97a` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci */;
 USE `db_www_randomizer_com_8ba7f97a`;
 
+DROP DATABASE IF EXISTS `hosting_centrum`;
 CREATE DATABASE `hosting_centrum` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci */;
 USE `hosting_centrum`;
 
